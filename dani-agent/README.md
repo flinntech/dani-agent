@@ -230,6 +230,7 @@ docker build -t dani-agent:latest .
 ```bash
 docker run -d \
   --name dani-agent \
+  --network root_default \
   -p 8080:8080 \
   -e ANTHROPIC_API_KEY=sk-ant-your-key \
   -e DRM_MCP_URL=http://drm-mcp-server:3000/mcp \
@@ -239,34 +240,45 @@ docker run -d \
 
 ### Run with Docker Compose
 
+The service is configured to connect to the `root_default` network where the MCP servers are running.
+
 1. Create `.env` file with your configuration
-2. Start the service:
+2. Ensure the `root_default` network exists (or modify `docker-compose.yml` for your network)
+3. Start the service:
 
 ```bash
 docker-compose up -d
 ```
 
-3. View logs:
+4. View logs:
 
 ```bash
 docker-compose logs -f dani-agent
 ```
 
-4. Stop the service:
+5. Stop the service:
 
 ```bash
 docker-compose down
 ```
 
-### Connecting to Existing Network
+### Connecting to Different Network
 
-If your MCP servers are on an existing Docker network, modify `docker-compose.yml`:
+If your MCP servers are on a different Docker network, modify `docker-compose.yml`:
 
 ```yaml
 networks:
-  dani-network:
+  your-network-name:
     external: true
-    name: your-existing-network-name
+```
+
+And update the service to use that network:
+
+```yaml
+services:
+  dani-agent:
+    networks:
+      - your-network-name
 ```
 
 ## Configuration
