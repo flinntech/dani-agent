@@ -31,8 +31,5 @@ services:
     #   - .env
 
 networks:
-  dani-network:
-    driver: bridge
-    # Uncomment to connect to existing network (e.g., with MCP servers)
-    # external: true
-    # name: your-existing-network
+  root_default:
+    external: true
