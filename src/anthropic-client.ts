@@ -15,11 +15,13 @@ export class AnthropicClient {
   private logger: Logger;
   private systemMessage: string;
   private maxRetries: number = 3;
+  private cacheTTL?: '5m' | '1h';
 
-  constructor(apiKey: string, systemMessage: string, logger: Logger) {
+  constructor(apiKey: string, systemMessage: string, logger: Logger, cacheTTL?: '5m' | '1h') {
     this.client = new Anthropic({ apiKey });
     this.systemMessage = systemMessage;
     this.logger = logger;
+    this.cacheTTL = cacheTTL;
   }
 
   /**
@@ -57,6 +59,11 @@ export class AnthropicClient {
       });
 
       // Build the request parameters
+      const cacheControl: any = { type: 'ephemeral' };
+      if (this.cacheTTL) {
+        cacheControl.ttl = this.cacheTTL;
+      }
+
       const params: any = {
         model: modelConfig.model,
         max_tokens: modelConfig.max_tokens,
@@ -64,7 +71,7 @@ export class AnthropicClient {
           {
             type: 'text',
             text: this.systemMessage,
-            cache_control: { type: 'ephemeral' },
+            cache_control: cacheControl,
           },
         ],
         messages,
@@ -77,6 +84,11 @@ export class AnthropicClient {
           type: 'enabled',
           budget_tokens: modelConfig.thinking.budget_tokens,
         };
+      }
+
+      // Add beta header when using extended cache TTL
+      if (this.cacheTTL) {
+        params.betas = ['extended-cache-ttl-2025-04-11'];
       }
 
       // Make the API call
@@ -158,6 +170,10 @@ export class AnthropicClient {
 
   /**
    * Extract usage statistics from Claude response
+   *
+   * Note: Cache duration breakdown (5m vs 1h tokens) requires the 'extended-cache-ttl-2025-04-11' beta
+   * and explicit TTL specification in cache_control. When available, provides granular tracking of
+   * cache token durations via usage.cache_creation.ephemeral_5m/1h_input_tokens.
    */
   extractUsageStats(response: Anthropic.Message): UsageStats {
     const usage = response.usage as any;
@@ -167,6 +183,7 @@ export class AnthropicClient {
     const cacheReadTokens = usage.cache_read_input_tokens || 0;
 
     // Extract cache token breakdown by duration from nested objects (if available)
+    // These fields only appear when using the extended-cache-ttl beta with explicit TTL values
     const cacheCreation5m = usage.cache_creation?.ephemeral_5m_input_tokens;
     const cacheCreation1h = usage.cache_creation?.ephemeral_1h_input_tokens;
     const cacheRead5m = usage.cache_read?.ephemeral_5m_input_tokens;

@@ -122,6 +122,27 @@ Send a message to the DANI agent.
 }
 ```
 
+**With Extended Cache TTL (Beta):**
+
+When `CACHE_TTL` is configured, responses include cache token breakdown by duration:
+
+```json
+{
+  "usage": {
+    "input_tokens": 1250,
+    "output_tokens": 420,
+    "cache_creation_tokens": 850,
+    "cache_read_tokens": 2100,
+    "cache_creation_5m_tokens": 850,
+    "cache_creation_1h_tokens": 0,
+    "cache_read_5m_tokens": 2100,
+    "cache_read_1h_tokens": 0
+  }
+}
+```
+
+See [Cache Configuration](#cache-configuration) for details on enabling this feature.
+
 **Error Response:**
 
 ```json
@@ -293,6 +314,7 @@ services:
 | `PORT` | No | `8080` | HTTP server port |
 | `NODE_ENV` | No | `production` | Node environment |
 | `LOG_LEVEL` | No | `info` | Logging level (debug, info, warn, error) |
+| `CACHE_TTL` | No | - | Cache duration: `5m` or `1h` (see [Cache Configuration](#cache-configuration)) |
 | `SYSTEM_MESSAGE` | No | (from file) | System message for DANI personality |
 | `MAX_CONVERSATION_HISTORY` | No | `20` | Max messages to keep in history |
 | `CONVERSATION_TIMEOUT_MINUTES` | No | `60` | Minutes before conversation cleanup |
@@ -338,6 +360,41 @@ With caching (after first request):
 - Cached: 4,000 tokens × $0.30/M = $0.0012
 - Output: 500 tokens × $15/M = $0.0075
 - **Total: $0.0117 per request (48% savings)**
+
+### Cache Configuration
+
+#### Extended Cache TTL (Beta)
+
+By default, prompt caching uses 5-minute cache duration. Anthropic offers an extended 1-hour cache duration through the `extended-cache-ttl-2025-04-11` beta feature.
+
+**To enable extended cache tracking:**
+
+1. Set the `CACHE_TTL` environment variable:
+   ```bash
+   CACHE_TTL=5m  # Default 5-minute cache
+   # or
+   CACHE_TTL=1h  # Extended 1-hour cache (2x write cost, same read cost)
+   ```
+
+2. When enabled, API responses include token breakdown by duration:
+   ```json
+   {
+     "cache_creation_5m_tokens": 850,
+     "cache_creation_1h_tokens": 0,
+     "cache_read_5m_tokens": 2100,
+     "cache_read_1h_tokens": 0
+   }
+   ```
+
+**Pricing:**
+- **5-minute cache write**: 1.25× base input token price
+- **1-hour cache write**: 2× base input token price
+- **Cache read** (both durations): 0.1× base input token price
+
+**When to use 1-hour cache:**
+- Prompts accessed more frequently than every 5 minutes
+- Long system messages or tool schemas that rarely change
+- High-volume production workloads with consistent prompts
 
 ## Logging
 

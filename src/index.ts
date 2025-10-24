@@ -184,7 +184,8 @@ async function initialize(): Promise<void> {
     const anthropicClient = new AnthropicClient(
       config.anthropicApiKey,
       config.systemMessage,
-      logger
+      logger,
+      config.cacheTTL
     );
 
     // Initialize DANI agent

@@ -77,6 +77,12 @@ function parseMCPServers(): MCPServerConfig[] {
 export function createConfig(): AppConfig {
   validateConfig();
 
+  // Parse cache TTL configuration
+  const cacheTTL = process.env.CACHE_TTL as '5m' | '1h' | undefined;
+  if (cacheTTL && cacheTTL !== '5m' && cacheTTL !== '1h') {
+    throw new Error('CACHE_TTL must be either "5m" or "1h"');
+  }
+
   return {
     port: parseInt(process.env.PORT || '8080', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -85,6 +91,7 @@ export function createConfig(): AppConfig {
     mcpServers: parseMCPServers(),
     systemMessage: loadSystemMessage(),
     conversationTimeoutMinutes: parseInt(process.env.CONVERSATION_TIMEOUT_MINUTES || '60', 10),
+    cacheTTL,
   };
 }
 
