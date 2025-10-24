@@ -10,8 +10,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production=false
+# Install dependencies (including devDependencies for build)
+RUN npm ci
 
 # Copy source code
 COPY src ./src
@@ -36,14 +36,14 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --only=production && \
+RUN npm ci --omit=dev && \
     npm cache clean --force
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
 # Copy system message file (optional)
-COPY system-message.txt ./system-message.txt
+COPY system-message.md ./system-message.md
 
 # Change ownership to non-root user
 RUN chown -R nodejs:nodejs /app
