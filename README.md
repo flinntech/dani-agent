@@ -62,7 +62,7 @@ DRM_MCP_URL=http://drm-mcp-server:3000/mcp
 OUTAGE_MCP_URL=http://outage-monitor-mcp:3002/mcp
 ```
 
-5. (Optional) Customize the system message in `system-message.txt`
+5. (Optional) Customize the system message in `system-message.md`
 
 ### Running Locally
 
@@ -302,7 +302,7 @@ services:
 The system message defines DANI's personality and capabilities. You can configure it in two ways:
 
 1. **Via environment variable**: Set `SYSTEM_MESSAGE` in your `.env` file
-2. **Via file**: Edit `system-message.txt` in the project root
+2. **Via file**: Edit `system-message.md` in the project root
 
 If both are provided, the environment variable takes precedence.
 
@@ -455,7 +455,7 @@ dani-agent/
 │   ├── anthropic-client.ts   # Claude API wrapper with caching
 │   ├── config.ts             # Configuration and logging setup
 │   └── types.ts              # TypeScript type definitions
-├── system-message.txt        # DANI personality and instructions
+├── system-message.md         # DANI personality and instructions
 ├── Dockerfile                # Multi-stage production Dockerfile
 ├── docker-compose.yml        # Docker Compose configuration
 ├── package.json              # Dependencies and scripts
@@ -500,7 +500,7 @@ The service will automatically discover and use tools from the new server.
 
 ### Modifying System Message
 
-Edit `system-message.txt` and restart the service. The new personality will be applied to all new conversations.
+Edit `system-message.md` and restart the service. The new personality will be applied to all new conversations.
 
 ## Production Deployment
 

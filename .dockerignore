@@ -21,7 +21,7 @@ dist/
 # Documentation
 README.md
 *.md
-!system-message.txt
+!system-message.md
 
 # Docker
 Dockerfile

@@ -20,13 +20,13 @@ function loadSystemMessage(): string {
     return process.env.SYSTEM_MESSAGE;
   }
 
-  // Then try system-message.txt file
-  const systemMessagePath = join(process.cwd(), 'system-message.txt');
+  // Then try system-message.md file
+  const systemMessagePath = join(process.cwd(), 'system-message.md');
   if (existsSync(systemMessagePath)) {
     try {
       return readFileSync(systemMessagePath, 'utf-8').trim();
     } catch (error) {
-      console.warn('Failed to read system-message.txt, using default', error);
+      console.warn('Failed to read system-message.md, using default', error);
     }
   }
 

@@ -43,7 +43,7 @@ RUN npm ci --omit=dev && \
 COPY --from=builder /app/dist ./dist
 
 # Copy system message file (optional)
-COPY system-message.txt ./system-message.txt
+COPY system-message.md ./system-message.md
 
 # Change ownership to non-root user
 RUN chown -R nodejs:nodejs /app
