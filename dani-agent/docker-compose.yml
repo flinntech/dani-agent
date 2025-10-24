@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  dani-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dani-agent
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-8080}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DRM_MCP_URL=${DRM_MCP_URL:-http://drm-mcp-server:3000/mcp}
+      - OUTAGE_MCP_URL=${OUTAGE_MCP_URL:-http://outage-monitor-mcp:3002/mcp}
+      - MAX_CONVERSATION_HISTORY=${MAX_CONVERSATION_HISTORY:-20}
+      - CONVERSATION_TIMEOUT_MINUTES=${CONVERSATION_TIMEOUT_MINUTES:-60}
+    networks:
+      - dani-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Uncomment to use env file
+    # env_file:
+    #   - .env
+
+networks:
+  dani-network:
+    driver: bridge
+    # Uncomment to connect to existing network (e.g., with MCP servers)
+    # external: true
+    # name: your-existing-network
