@@ -4,7 +4,7 @@
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { FetchTransport } from '@modelcontextprotocol/sdk/client/fetch.js';
 import {
   MCPTool,
   MCPServerConfig,
@@ -57,8 +57,8 @@ export class MCPClientManager {
     try {
       this.logger.info(`Connecting to MCP server: ${config.name}`, { url: config.url });
 
-      // Create SSE transport
-      const transport = new SSEClientTransport(new URL(config.url));
+      // Create HTTP transport using Fetch
+      const transport = new FetchTransport(new URL(config.url));
 
       // Create MCP client
       const client = new Client(
