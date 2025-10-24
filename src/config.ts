@@ -142,7 +142,7 @@ export const MODEL_CONFIG = {
   },
   ANALYTICAL: {
     model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 8192,
+    max_tokens: 16000,
     thinking: {
       type: 'enabled' as const,
       budget_tokens: 10000,
