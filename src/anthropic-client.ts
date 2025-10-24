@@ -91,19 +91,19 @@ export class AnthropicClient {
           ? (cacheReadTokens / (inputTokens + cacheReadTokens)) * 100
           : 0;
 
-        // Build cache breakdown info if available
+        // Build cache breakdown info if available from nested objects
         const cacheBreakdown: any = {};
-        if (usage.cache_creation_5m_input_tokens !== undefined) {
-          cacheBreakdown.cache_creation_5m = usage.cache_creation_5m_input_tokens;
+        if (usage.cache_creation?.ephemeral_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_5m = usage.cache_creation.ephemeral_5m_input_tokens;
         }
-        if (usage.cache_creation_1h_input_tokens !== undefined) {
-          cacheBreakdown.cache_creation_1h = usage.cache_creation_1h_input_tokens;
+        if (usage.cache_creation?.ephemeral_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_1h = usage.cache_creation.ephemeral_1h_input_tokens;
         }
-        if (usage.cache_read_5m_input_tokens !== undefined) {
-          cacheBreakdown.cache_read_5m = usage.cache_read_5m_input_tokens;
+        if (usage.cache_read?.ephemeral_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_5m = usage.cache_read.ephemeral_5m_input_tokens;
         }
-        if (usage.cache_read_1h_input_tokens !== undefined) {
-          cacheBreakdown.cache_read_1h = usage.cache_read_1h_input_tokens;
+        if (usage.cache_read?.ephemeral_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_1h = usage.cache_read.ephemeral_1h_input_tokens;
         }
 
         this.logger.info('Claude API response received', {
@@ -166,11 +166,11 @@ export class AnthropicClient {
     const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
     const cacheReadTokens = usage.cache_read_input_tokens || 0;
 
-    // Extract cache token breakdown by duration (if available)
-    const cacheCreation5m = usage.cache_creation_5m_input_tokens;
-    const cacheCreation1h = usage.cache_creation_1h_input_tokens;
-    const cacheRead5m = usage.cache_read_5m_input_tokens;
-    const cacheRead1h = usage.cache_read_1h_input_tokens;
+    // Extract cache token breakdown by duration from nested objects (if available)
+    const cacheCreation5m = usage.cache_creation?.ephemeral_5m_input_tokens;
+    const cacheCreation1h = usage.cache_creation?.ephemeral_1h_input_tokens;
+    const cacheRead5m = usage.cache_read?.ephemeral_5m_input_tokens;
+    const cacheRead1h = usage.cache_read?.ephemeral_1h_input_tokens;
 
     return {
       input_tokens: usage.input_tokens,
