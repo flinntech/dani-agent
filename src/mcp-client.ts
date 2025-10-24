@@ -4,7 +4,7 @@
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { FetchTransport } from '@modelcontextprotocol/sdk/client/fetch.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   MCPTool,
   MCPServerConfig,
@@ -57,8 +57,8 @@ export class MCPClientManager {
     try {
       this.logger.info(`Connecting to MCP server: ${config.name}`, { url: config.url });
 
-      // Create HTTP transport using Fetch
-      const transport = new FetchTransport(new URL(config.url));
+      // Create HTTP transport using StreamableHTTP
+      const transport = new StreamableHTTPClientTransport(new URL(config.url));
 
       // Create MCP client
       const client = new Client(
