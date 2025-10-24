@@ -312,9 +312,9 @@ The service automatically selects models based on complexity:
 
 | Complexity | Model | Max Tokens | Extended Thinking |
 |------------|-------|------------|-------------------|
-| `SIMPLE` | Claude Haiku 4.5 | 4,096 | No |
-| `PROCEDURAL` | Claude Sonnet 4.5 | 8,192 | No |
-| `ANALYTICAL` | Claude Sonnet 4.5 | 8,192 | Yes (10k budget) |
+| `SIMPLE` | Claude Haiku 4.5 | 20,000 | No |
+| `PROCEDURAL` | Claude Sonnet 4.5 | 20,000 | No |
+| `ANALYTICAL` | Claude Sonnet 4.5 | 20,000 | Yes (10k budget) |
 
 ## Prompt Caching
 
