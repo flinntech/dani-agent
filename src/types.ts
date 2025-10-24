@@ -123,6 +123,7 @@ export interface AnthropicTool {
   };
   cache_control?: {
     type: 'ephemeral';
+    ttl?: '5m' | '1h';
   };
 }
 
@@ -195,4 +196,5 @@ export interface AppConfig {
   mcpServers: MCPServerConfig[];
   systemMessage: string;
   conversationTimeoutMinutes: number;
+  cacheTTL?: '5m' | '1h';
 }

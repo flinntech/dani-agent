@@ -15,11 +15,13 @@ export class AnthropicClient {
   private logger: Logger;
   private systemMessage: string;
   private maxRetries: number = 3;
+  private cacheTTL?: '5m' | '1h';
 
-  constructor(apiKey: string, systemMessage: string, logger: Logger) {
+  constructor(apiKey: string, systemMessage: string, logger: Logger, cacheTTL?: '5m' | '1h') {
     this.client = new Anthropic({ apiKey });
     this.systemMessage = systemMessage;
     this.logger = logger;
+    this.cacheTTL = cacheTTL;
   }
 
   /**
@@ -57,6 +59,11 @@ export class AnthropicClient {
       });
 
       // Build the request parameters
+      const cacheControl: any = { type: 'ephemeral' };
+      if (this.cacheTTL) {
+        cacheControl.ttl = this.cacheTTL;
+      }
+
       const params: any = {
         model: modelConfig.model,
         max_tokens: modelConfig.max_tokens,
@@ -64,7 +71,7 @@ export class AnthropicClient {
           {
             type: 'text',
             text: this.systemMessage,
-            cache_control: { type: 'ephemeral' },
+            cache_control: cacheControl,
           },
         ],
         messages,
@@ -79,6 +86,11 @@ export class AnthropicClient {
         };
       }
 
+      // Add beta header when using extended cache TTL
+      if (this.cacheTTL) {
+        params.betas = ['extended-cache-ttl-2025-04-11'];
+      }
+
       // Make the API call
       const response = await this.client.messages.create(params) as Anthropic.Message;
 
@@ -91,19 +103,19 @@ export class AnthropicClient {
           ? (cacheReadTokens / (inputTokens + cacheReadTokens)) * 100
           : 0;
 
-        // Build cache breakdown info if available
+        // Build cache breakdown info if available from nested objects
         const cacheBreakdown: any = {};
-        if (usage.cache_creation_5m_input_tokens !== undefined) {
-          cacheBreakdown.cache_creation_5m = usage.cache_creation_5m_input_tokens;
+        if (usage.cache_creation?.ephemeral_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_5m = usage.cache_creation.ephemeral_5m_input_tokens;
         }
-        if (usage.cache_creation_1h_input_tokens !== undefined) {
-          cacheBreakdown.cache_creation_1h = usage.cache_creation_1h_input_tokens;
+        if (usage.cache_creation?.ephemeral_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_1h = usage.cache_creation.ephemeral_1h_input_tokens;
         }
-        if (usage.cache_read_5m_input_tokens !== undefined) {
-          cacheBreakdown.cache_read_5m = usage.cache_read_5m_input_tokens;
+        if (usage.cache_read?.ephemeral_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_5m = usage.cache_read.ephemeral_5m_input_tokens;
         }
-        if (usage.cache_read_1h_input_tokens !== undefined) {
-          cacheBreakdown.cache_read_1h = usage.cache_read_1h_input_tokens;
+        if (usage.cache_read?.ephemeral_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_1h = usage.cache_read.ephemeral_1h_input_tokens;
         }
 
         this.logger.info('Claude API response received', {
@@ -158,6 +170,10 @@ export class AnthropicClient {
 
   /**
    * Extract usage statistics from Claude response
+   *
+   * Note: Cache duration breakdown (5m vs 1h tokens) requires the 'extended-cache-ttl-2025-04-11' beta
+   * and explicit TTL specification in cache_control. When available, provides granular tracking of
+   * cache token durations via usage.cache_creation.ephemeral_5m/1h_input_tokens.
    */
   extractUsageStats(response: Anthropic.Message): UsageStats {
     const usage = response.usage as any;
@@ -166,11 +182,12 @@ export class AnthropicClient {
     const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
     const cacheReadTokens = usage.cache_read_input_tokens || 0;
 
-    // Extract cache token breakdown by duration (if available)
-    const cacheCreation5m = usage.cache_creation_5m_input_tokens;
-    const cacheCreation1h = usage.cache_creation_1h_input_tokens;
-    const cacheRead5m = usage.cache_read_5m_input_tokens;
-    const cacheRead1h = usage.cache_read_1h_input_tokens;
+    // Extract cache token breakdown by duration from nested objects (if available)
+    // These fields only appear when using the extended-cache-ttl beta with explicit TTL values
+    const cacheCreation5m = usage.cache_creation?.ephemeral_5m_input_tokens;
+    const cacheCreation1h = usage.cache_creation?.ephemeral_1h_input_tokens;
+    const cacheRead5m = usage.cache_read?.ephemeral_5m_input_tokens;
+    const cacheRead1h = usage.cache_read?.ephemeral_1h_input_tokens;
 
     return {
       input_tokens: usage.input_tokens,
