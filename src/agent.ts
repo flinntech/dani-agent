@@ -76,9 +76,6 @@ export class DANIAgent {
       conversation.lastAccessedAt = new Date();
       conversation.model = result.model;
 
-      // Trim conversation history if needed
-      this.trimConversationHistory(conversation);
-
       return {
         ...result,
         conversationId: convId,
@@ -263,52 +260,6 @@ export class DANIAgent {
     }
 
     return conversation;
-  }
-
-  /**
-   * Trim conversation history to stay within limits
-   * Ensures tool_use/tool_result pairs are kept together
-   */
-  private trimConversationHistory(conversation: Conversation): void {
-    const maxMessages = this.config.maxConversationHistory;
-
-    if (conversation.messages.length <= maxMessages) {
-      return;
-    }
-
-    // Find a safe trimming point that doesn't break tool_use/tool_result pairs
-    let trimIndex = conversation.messages.length - maxMessages;
-
-    // Check if the message at trimIndex is a user message with tool_result blocks
-    if (trimIndex > 0 && trimIndex < conversation.messages.length) {
-      const messageAtTrimPoint = conversation.messages[trimIndex];
-
-      if (messageAtTrimPoint.role === 'user' && Array.isArray(messageAtTrimPoint.content)) {
-        const hasToolResults = messageAtTrimPoint.content.some(
-          (block: any) => block.type === 'tool_result'
-        );
-
-        // If this user message has tool_results, we need to also remove its
-        // corresponding assistant message with tool_use blocks
-        if (hasToolResults) {
-          trimIndex++;
-          this.logger.debug('Adjusted trim point to preserve tool_use/tool_result pair', {
-            conversationId: conversation.id,
-            originalTrimIndex: conversation.messages.length - maxMessages,
-            adjustedTrimIndex: trimIndex,
-          });
-        }
-      }
-    }
-
-    const removed = trimIndex;
-    conversation.messages = conversation.messages.slice(trimIndex);
-
-    this.logger.info('Trimmed conversation history', {
-      conversationId: conversation.id,
-      removedMessages: removed,
-      remainingMessages: conversation.messages.length,
-    });
   }
 
   /**

@@ -84,7 +84,6 @@ export function createConfig(): AppConfig {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
     mcpServers: parseMCPServers(),
     systemMessage: loadSystemMessage(),
-    maxConversationHistory: parseInt(process.env.MAX_CONVERSATION_HISTORY || '20', 10),
     conversationTimeoutMinutes: parseInt(process.env.CONVERSATION_TIMEOUT_MINUTES || '60', 10),
   };
 }
