@@ -26,6 +26,11 @@ export interface UsageStats {
   output_tokens: number;
   cache_creation_tokens: number;
   cache_read_tokens: number;
+  // Cache token breakdown by duration (if available)
+  cache_creation_5m_tokens?: number;
+  cache_creation_1h_tokens?: number;
+  cache_read_5m_tokens?: number;
+  cache_read_1h_tokens?: number;
 }
 
 /**

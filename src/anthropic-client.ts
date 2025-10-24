@@ -91,11 +91,27 @@ export class AnthropicClient {
           ? (cacheReadTokens / (inputTokens + cacheReadTokens)) * 100
           : 0;
 
+        // Build cache breakdown info if available
+        const cacheBreakdown: any = {};
+        if (usage.cache_creation_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_5m = usage.cache_creation_5m_input_tokens;
+        }
+        if (usage.cache_creation_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_creation_1h = usage.cache_creation_1h_input_tokens;
+        }
+        if (usage.cache_read_5m_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_5m = usage.cache_read_5m_input_tokens;
+        }
+        if (usage.cache_read_1h_input_tokens !== undefined) {
+          cacheBreakdown.cache_read_1h = usage.cache_read_1h_input_tokens;
+        }
+
         this.logger.info('Claude API response received', {
           model: modelConfig.model,
           stopReason: response.stop_reason,
           usage: response.usage,
           cacheHitRate: `${cacheHitRate.toFixed(2)}%`,
+          ...(Object.keys(cacheBreakdown).length > 0 && { cacheBreakdown }),
         });
       }
 
@@ -145,11 +161,26 @@ export class AnthropicClient {
    */
   extractUsageStats(response: Anthropic.Message): UsageStats {
     const usage = response.usage as any;
+
+    // Extract total cache tokens
+    const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
+    const cacheReadTokens = usage.cache_read_input_tokens || 0;
+
+    // Extract cache token breakdown by duration (if available)
+    const cacheCreation5m = usage.cache_creation_5m_input_tokens;
+    const cacheCreation1h = usage.cache_creation_1h_input_tokens;
+    const cacheRead5m = usage.cache_read_5m_input_tokens;
+    const cacheRead1h = usage.cache_read_1h_input_tokens;
+
     return {
       input_tokens: usage.input_tokens,
       output_tokens: usage.output_tokens,
-      cache_creation_tokens: usage.cache_creation_input_tokens || 0,
-      cache_read_tokens: usage.cache_read_input_tokens || 0,
+      cache_creation_tokens: cacheCreationTokens,
+      cache_read_tokens: cacheReadTokens,
+      ...(cacheCreation5m !== undefined && { cache_creation_5m_tokens: cacheCreation5m }),
+      ...(cacheCreation1h !== undefined && { cache_creation_1h_tokens: cacheCreation1h }),
+      ...(cacheRead5m !== undefined && { cache_read_5m_tokens: cacheRead5m }),
+      ...(cacheRead1h !== undefined && { cache_read_1h_tokens: cacheRead1h }),
     };
   }
 
