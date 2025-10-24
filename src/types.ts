@@ -189,6 +189,5 @@ export interface AppConfig {
   anthropicApiKey: string;
   mcpServers: MCPServerConfig[];
   systemMessage: string;
-  maxConversationHistory: number;
   conversationTimeoutMinutes: number;
 }

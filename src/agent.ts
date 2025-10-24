@@ -76,9 +76,6 @@ export class DANIAgent {
       conversation.lastAccessedAt = new Date();
       conversation.model = result.model;
 
-      // Trim conversation history if needed
-      this.trimConversationHistory(conversation);
-
       return {
         ...result,
         conversationId: convId,
@@ -263,24 +260,6 @@ export class DANIAgent {
     }
 
     return conversation;
-  }
-
-  /**
-   * Trim conversation history to stay within limits
-   */
-  private trimConversationHistory(conversation: Conversation): void {
-    const maxMessages = this.config.maxConversationHistory;
-
-    if (conversation.messages.length > maxMessages) {
-      const removed = conversation.messages.length - maxMessages;
-      conversation.messages = conversation.messages.slice(-maxMessages);
-
-      this.logger.info('Trimmed conversation history', {
-        conversationId: conversation.id,
-        removedMessages: removed,
-        remainingMessages: conversation.messages.length,
-      });
-    }
   }
 
   /**
