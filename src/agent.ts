@@ -11,6 +11,7 @@ import {
   AgentResponse,
   Logger,
   AppConfig,
+  UsageStats,
 } from './types';
 import { AnthropicClient } from './anthropic-client';
 import { MCPClientManager } from './mcp-client';
@@ -138,7 +139,8 @@ export class DANIAgent {
   private async agenticLoop(
     conversation: Conversation,
     complexity: ComplexityLevel,
-    iteration: number = 1
+    iteration: number = 1,
+    cumulativeUsage: UsageStats[] = []
   ): Promise<AgentResponse> {
     const maxIterations = 10; // Prevent infinite loops
 
@@ -166,6 +168,10 @@ export class DANIAgent {
       complexity
     );
 
+    // Track usage for this iteration
+    const currentUsage = this.anthropicClient.extractUsageStats(response);
+    cumulativeUsage.push(currentUsage);
+
     // Check stop reason
     if (this.anthropicClient.hasToolUse(response)) {
       // Extract tool uses
@@ -176,6 +182,7 @@ export class DANIAgent {
         iteration,
         toolCount: toolUses.length,
         tools: toolUses.map(t => t.name),
+        iterationUsage: currentUsage,
       });
 
       // Add assistant's response to conversation
@@ -194,19 +201,22 @@ export class DANIAgent {
       });
 
       // Continue the loop with the tool results
-      return this.agenticLoop(conversation, complexity, iteration + 1);
+      return this.agenticLoop(conversation, complexity, iteration + 1, cumulativeUsage);
     } else {
       // Final response received
       const textContent = this.anthropicClient.extractTextContent(response);
       const thinkingContent = this.anthropicClient.extractThinkingContent(response);
-      const usage = this.anthropicClient.extractUsageStats(response);
+
+      // Calculate total cumulative usage
+      const totalUsage = this.sumUsageStats(cumulativeUsage);
 
       this.logger.info('Final response received', {
         conversationId: conversation.id,
         iterations: iteration,
         responseLength: textContent.length,
         hasThinking: !!thinkingContent,
-        usage,
+        totalUsage,
+        usageBreakdown: cumulativeUsage,
       });
 
       // Add final response to conversation
@@ -222,8 +232,10 @@ export class DANIAgent {
         response: textContent,
         conversationId: conversation.id,
         model: modelConfig,
-        usage,
+        usage: totalUsage,
         thinking: thinkingContent,
+        usageBreakdown: cumulativeUsage,
+        iterations: iteration,
       };
     }
   }
@@ -277,6 +289,27 @@ export class DANIAgent {
     });
 
     return Promise.all(toolExecutions);
+  }
+
+  /**
+   * Sum usage statistics across multiple iterations
+   */
+  private sumUsageStats(usageArray: UsageStats[]): UsageStats {
+    return usageArray.reduce((total, current) => ({
+      input_tokens: total.input_tokens + current.input_tokens,
+      output_tokens: total.output_tokens + current.output_tokens,
+      cache_creation_tokens: total.cache_creation_tokens + current.cache_creation_tokens,
+      cache_read_tokens: total.cache_read_tokens + current.cache_read_tokens,
+      cache_creation_5m_tokens: (total.cache_creation_5m_tokens || 0) + (current.cache_creation_5m_tokens || 0),
+      cache_creation_1h_tokens: (total.cache_creation_1h_tokens || 0) + (current.cache_creation_1h_tokens || 0),
+      cache_read_5m_tokens: (total.cache_read_5m_tokens || 0) + (current.cache_read_5m_tokens || 0),
+      cache_read_1h_tokens: (total.cache_read_1h_tokens || 0) + (current.cache_read_1h_tokens || 0),
+    }), {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+    });
   }
 
   /**

@@ -41,6 +41,7 @@ export interface ChatResponse {
   conversationId: string;
   model: string;
   usage: UsageStats;
+  iterations?: number;
 }
 
 /**
@@ -175,6 +176,8 @@ export interface AgentResponse {
   thinking?: string;
   complexityDetected?: ComplexityLevel;
   complexitySource?: 'auto' | 'manual';
+  usageBreakdown?: UsageStats[];
+  iterations?: number;
 }
 
 /**
