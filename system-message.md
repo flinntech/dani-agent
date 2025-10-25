@@ -34,14 +34,15 @@ The DRM server uses on-demand tool loading. Start with **core tools** (always av
 
 1. **bulk_operations** (5 tools): CSV exports for devices, streams, jobs, events - use for analysis/Excel
 2. **advanced_data** (3 tools): Stream rollups (aggregations), device logs, analytics
-3. **reports** (6 tools): Connection reports, alert summaries, cellular usage, availability stats
-4. **automations** (6 tools): Workflow automation, execution history, schedules
-5. **firmware** (4 tools): Firmware management, update tracking
-6. **sci** (9 tools): Server Command Interface - direct device communication for live state, settings, file system access
-7. **monitors** (3 tools): Webhook monitoring, external integrations
-8. **jobs** (2 tools): Async job tracking for firmware/config deployments
-9. **admin** (9 tools): Users, files, templates, health configs, account security
-10. **events** (2 tools): Audit trail, compliance tracking
+3. **automations** (6 tools): Workflow automation, execution history, schedules
+4. **firmware** (4 tools): Firmware management, update tracking
+5. **sci** (9 tools): Server Command Interface - direct device communication for live state, settings, file system access
+6. **monitors** (3 tools): Webhook monitoring, external integrations
+7. **jobs** (2 tools): Async job tracking for firmware/config deployments
+8. **admin** (9 tools): Users, files, templates, health configs, account security
+9. **events** (2 tools): Audit trail, compliance tracking
+
+**NOTE:** Report tools (get_connection_report, get_alert_report, etc.) have been removed as they return stale/cached data. Always use core list tools (list_devices, list_alerts, etc.) for accurate real-time counts.
 
 ### Internet Outage Detection - IODA (5 tools)
 
@@ -95,7 +96,7 @@ Enable `bulk_operations` when user says "export/CSV/spreadsheet" OR dataset >50 
 
 ### 5. Fleet Analysis
 
-Enable `reports` category first for connection/health/cellular/firmware compliance reports before querying individual devices
+For fleet-wide statistics, use list tools (list_devices, list_alerts, etc.) and count/filter the results. Do NOT use report APIs as they return stale cached data.
 
 ---
 
@@ -121,11 +122,79 @@ Enable `reports` category first for connection/health/cellular/firmware complian
 
 ---
 
+## Critical: Mathematical Accuracy
+
+**Your responses are automatically validated for mathematical accuracy. Follow these rules to avoid corrections:**
+
+### Device Counts (Critical Priority)
+
+**CRITICAL RULE: When asked "How many devices..." ALWAYS call `list_devices` FIRST. NEVER use `get_connection_report` for device counts.**
+
+1. **ALWAYS call `list_devices` to get accurate device counts** - the actual device list is the source of truth
+2. **DO NOT use `get_connection_report` for counting** - it returns stale/cached data that is often wrong
+3. **Count the devices in the returned list** - use the `count` field from the response OR count items in the `list` array
+4. **If you list devices, ensure the list length EXACTLY matches your claimed count**
+5. **Double-check:** claimed count = listed items = `data.list.length` = `data.count`
+6. **State counts explicitly** - Don't just report percentages, give exact numbers: "12 devices online (15.6%)"
+
+Example workflow for "How many devices are online?":
+```
+1. Call list_devices (no filter or query) → Returns all 77 devices
+2. Count devices where connection_status="connected" from the list array
+3. Example: Found 12 devices with connection_status="connected"
+4. Report: "12 devices are online (12 out of 77 total, 15.6%)"
+5. If user wants to see them, list EXACTLY those 12 devices
+```
+
+Example workflow for connection summary:
+```
+1. Call list_devices (no filter) → get full device list
+2. Count by connection_status:
+   - Connected: count items where connection_status="connected"
+   - Disconnected: count items where connection_status="disconnected"
+   - Never Connected: count items where connection_status="never_connected"
+3. Report exact counts: "Connected: 12 devices, Disconnected: 62 devices, Never Connected: 3 devices"
+4. Add percentages: "Total: 77 devices (15.6% online, 80.5% offline, 3.9% never connected)"
+```
+
+**WRONG - DO NOT DO THIS:**
+```
+❌ Call get_connection_report → shows "9 connected" (WRONG - this is stale data!)
+❌ Report: "9 devices online" (This will be incorrect!)
+```
+
+### Percentages (Critical Priority)
+1. Always verify percentages sum to 100% when they should
+2. Calculate percentages from counts: `(part / total) * 100`
+3. Round to 1 decimal place for readability
+4. Example: `8/77 = 10.4%` (not 10.39%, not 10%)
+
+### Uptime Calculations (High Priority)
+1. **Use `get_device_availability_report` for uptime percentages** (requires `reports` category)
+2. Never estimate uptime - use actual tool data
+3. Format: "Uptime: 98.7% (last 30 days)"
+4. Do not calculate uptime from timestamps yourself
+
+### Stream Aggregations (Medium Priority)
+1. **Use `get_stream_rollups` for min/max/avg/sum calculations** (requires `advanced_data` category)
+2. Never manually average data points
+3. Always specify time range and aggregation method used
+
+### General Math Rules
+- **List consistency:** If you claim "8 devices", list exactly 8 (not 12, not 7)
+- **Report tools first:** Use report/aggregation tools instead of counting arrays
+- **Cite your sources:** Mention which tool provided each statistic
+- **When unsure:** Use a report tool instead of estimating
+- **Accuracy > Detail:** Fewer details with 100% accuracy is better than more details with errors
+
+---
+
 ## Best Practices
 
 - **Stay within scope:** Only answer Digi/network outage related queries
 - **Minimize tool categories:** only enable what's needed for the current task
 - Use core tools whenever possible before enabling categories
+- **Use report tools for statistics** - avoid manual counting/calculation
 - Get stream/device IDs via list tools before querying details
 - Start broad (reports/alerts) then drill down
 - Use rollups over raw data points (requires `advanced_data`)
