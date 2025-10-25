@@ -14,6 +14,7 @@ import {
 } from './types';
 import { AnthropicClient } from './anthropic-client';
 import { MCPClientManager } from './mcp-client';
+import { QueryAnalyzer } from './query-analyzer';
 
 /**
  * DANI Agent
@@ -24,6 +25,7 @@ export class DANIAgent {
   private mcpManager: MCPClientManager;
   private logger: Logger;
   private config: AppConfig;
+  private queryAnalyzer?: QueryAnalyzer;
   private conversations: Map<string, Conversation> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -31,12 +33,14 @@ export class DANIAgent {
     anthropicClient: AnthropicClient,
     mcpManager: MCPClientManager,
     config: AppConfig,
-    logger: Logger
+    logger: Logger,
+    queryAnalyzer?: QueryAnalyzer
   ) {
     this.anthropicClient = anthropicClient;
     this.mcpManager = mcpManager;
     this.config = config;
     this.logger = logger;
+    this.queryAnalyzer = queryAnalyzer;
 
     // Start conversation cleanup timer
     this.startConversationCleanup();
@@ -49,15 +53,50 @@ export class DANIAgent {
   async processMessage(
     userMessage: string,
     conversationId?: string,
-    complexity: ComplexityLevel = 'ANALYTICAL'
+    complexity?: ComplexityLevel
   ): Promise<AgentResponse> {
     // Get or create conversation
     const convId = conversationId || uuidv4();
     const conversation = this.getOrCreateConversation(convId);
 
+    // Determine complexity level
+    let finalComplexity: ComplexityLevel;
+    let complexitySource: 'auto' | 'manual';
+
+    if (complexity) {
+      // Manual complexity provided
+      finalComplexity = complexity;
+      complexitySource = 'manual';
+      this.logger.info('Using manual complexity level', {
+        conversationId: convId,
+        complexity: finalComplexity,
+      });
+    } else {
+      // Auto-detect complexity
+      if (this.queryAnalyzer) {
+        this.logger.info('Auto-detecting query complexity', {
+          conversationId: convId,
+        });
+        finalComplexity = await this.queryAnalyzer.analyzeQuery(userMessage);
+        complexitySource = 'auto';
+        this.logger.info('Auto-detected complexity level', {
+          conversationId: convId,
+          complexity: finalComplexity,
+        });
+      } else {
+        // No analyzer available, default to ANALYTICAL
+        finalComplexity = 'ANALYTICAL';
+        complexitySource = 'manual';
+        this.logger.warn('No QueryAnalyzer available, defaulting to ANALYTICAL', {
+          conversationId: convId,
+        });
+      }
+    }
+
     this.logger.info('Processing message', {
       conversationId: convId,
-      complexity,
+      complexity: finalComplexity,
+      complexitySource,
       messageLength: userMessage.length,
       historySize: conversation.messages.length,
     });
@@ -70,7 +109,7 @@ export class DANIAgent {
       });
 
       // Execute the agentic loop
-      const result = await this.agenticLoop(conversation, complexity);
+      const result = await this.agenticLoop(conversation, finalComplexity);
 
       // Update conversation metadata
       conversation.lastAccessedAt = new Date();
@@ -79,6 +118,8 @@ export class DANIAgent {
       return {
         ...result,
         conversationId: convId,
+        complexityDetected: finalComplexity,
+        complexitySource,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

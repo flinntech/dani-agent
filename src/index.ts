@@ -8,6 +8,7 @@ import { config, logger } from './config';
 import { AnthropicClient } from './anthropic-client';
 import { MCPClientManager } from './mcp-client';
 import { DANIAgent } from './agent';
+import { QueryAnalyzer } from './query-analyzer';
 import {
   ChatRequest,
   ChatResponse,
@@ -43,6 +44,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Global state
 let agent: DANIAgent | null = null;
 let mcpManager: MCPClientManager | null = null;
+let queryAnalyzer: QueryAnalyzer | null = null;
 const startTime = Date.now();
 
 /**
@@ -100,10 +102,17 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
     }
 
     // Validate complexity if provided
-    const validComplexities: ComplexityLevel[] = ['SIMPLE', 'PROCEDURAL', 'ANALYTICAL'];
-    const selectedComplexity: ComplexityLevel = complexity && validComplexities.includes(complexity)
-      ? complexity
-      : 'ANALYTICAL';
+    let selectedComplexity: ComplexityLevel | undefined = undefined;
+    if (complexity) {
+      const validComplexities: ComplexityLevel[] = ['SIMPLE', 'PROCEDURAL', 'ANALYTICAL'];
+      if (!validComplexities.includes(complexity)) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: `Invalid complexity level. Must be one of: ${validComplexities.join(', ')}`,
+        });
+      }
+      selectedComplexity = complexity;
+    }
 
     if (!agent) {
       return res.status(503).json({
@@ -112,7 +121,7 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
       });
     }
 
-    // Process the message
+    // Process the message (auto-detect complexity if not provided)
     const result = await agent.processMessage(message.trim(), conversationId, selectedComplexity);
 
     // Return response
@@ -188,11 +197,16 @@ async function initialize(): Promise<void> {
       config.cacheTTL
     );
 
+    // Initialize Query Analyzer for auto-detection
+    queryAnalyzer = new QueryAnalyzer(config.anthropicApiKey, logger);
+    logger.info('QueryAnalyzer initialized for automatic complexity detection');
+
     // Initialize DANI agent
-    agent = new DANIAgent(anthropicClient, mcpManager, config, logger);
+    agent = new DANIAgent(anthropicClient, mcpManager, config, logger, queryAnalyzer);
 
     logger.info('DANI Agent Service initialized successfully', {
       availableTools: mcpManager.getAnthropicTools().length,
+      autoComplexityDetection: true,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

@@ -173,6 +173,8 @@ export interface AgentResponse {
   usage: UsageStats;
   toolsUsed?: string[];
   thinking?: string;
+  complexityDetected?: ComplexityLevel;
+  complexitySource?: 'auto' | 'manual';
 }
 
 /**
