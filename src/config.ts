@@ -96,7 +96,7 @@ export function createConfig(): AppConfig {
 }
 
 /**
- * Create Winston logger instance
+ * Create Winston logger instance with file and console transports
  */
 export function createLogger(config: AppConfig): Logger {
   const logFormat = winston.format.combine(
@@ -117,14 +117,54 @@ export function createLogger(config: AppConfig): Logger {
     })
   );
 
+  const transports: winston.transport[] = [
+    new winston.transports.Console({
+      format: consoleFormat,
+    }),
+  ];
+
+  // Add file transports if log directory is configured
+  const logDir = process.env.LOG_DIR || '/var/log/dani-agent';
+
+  // Combined log file (all levels)
+  transports.push(
+    new winston.transports.File({
+      filename: `${logDir}/combined.log`,
+      format: logFormat,
+      maxsize: 10485760, // 10MB
+      maxFiles: 5,
+      tailable: true,
+    })
+  );
+
+  // Error log file (errors only)
+  transports.push(
+    new winston.transports.File({
+      filename: `${logDir}/error.log`,
+      level: 'error',
+      format: logFormat,
+      maxsize: 10485760, // 10MB
+      maxFiles: 5,
+      tailable: true,
+    })
+  );
+
+  // Agent activity log (info and above, for tool calls and agent decisions)
+  transports.push(
+    new winston.transports.File({
+      filename: `${logDir}/agent-activity.log`,
+      level: 'info',
+      format: logFormat,
+      maxsize: 10485760, // 10MB
+      maxFiles: 10,
+      tailable: true,
+    })
+  );
+
   return winston.createLogger({
     level: config.logLevel,
     format: logFormat,
-    transports: [
-      new winston.transports.Console({
-        format: consoleFormat,
-      }),
-    ],
+    transports,
   });
 }
 

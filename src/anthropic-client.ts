@@ -58,6 +58,18 @@ export class AnthropicClient {
         retryCount,
       });
 
+      // Log detailed message content for debugging (at debug level)
+      this.logger.debug('Claude API request details', {
+        messages: messages.map(msg => ({
+          role: msg.role,
+          content: typeof msg.content === 'string'
+            ? msg.content.substring(0, 500) + (msg.content.length > 500 ? '...' : '')
+            : '[complex content]'
+        })),
+        toolCount: tools.length,
+        toolNames: tools.map(t => t.name),
+      });
+
       // Build the request parameters
       const cacheControl: any = { type: 'ephemeral' };
       if (this.cacheTTL) {
@@ -124,6 +136,32 @@ export class AnthropicClient {
           usage: response.usage,
           cacheHitRate: `${cacheHitRate.toFixed(2)}%`,
           ...(Object.keys(cacheBreakdown).length > 0 && { cacheBreakdown }),
+        });
+
+        // Log response content details (at debug level)
+        this.logger.debug('Claude API response details', {
+          stopReason: response.stop_reason,
+          contentBlocks: response.content.map((block: any) => {
+            if (block.type === 'text') {
+              return {
+                type: 'text',
+                text: block.text.substring(0, 500) + (block.text.length > 500 ? '...' : '')
+              };
+            } else if (block.type === 'thinking') {
+              return {
+                type: 'thinking',
+                thinking: block.thinking?.substring(0, 200) + '...'
+              };
+            } else if (block.type === 'tool_use') {
+              return {
+                type: 'tool_use',
+                name: block.name,
+                id: block.id,
+                input: JSON.stringify(block.input).substring(0, 200) + '...'
+              };
+            }
+            return { type: block.type };
+          })
         });
       }
 

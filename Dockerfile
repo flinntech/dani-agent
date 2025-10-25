@@ -45,6 +45,10 @@ COPY --from=builder /app/dist ./dist
 # Copy system message file (optional)
 COPY system-message.md ./system-message.md
 
+# Create log directory and set permissions
+RUN mkdir -p /var/log/dani-agent && \
+    chown -R nodejs:nodejs /var/log/dani-agent
+
 # Change ownership to non-root user
 RUN chown -R nodejs:nodejs /app
 
