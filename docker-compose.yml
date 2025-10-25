@@ -17,7 +17,7 @@ services:
       - MAX_CONVERSATION_HISTORY=${MAX_CONVERSATION_HISTORY:-20}
       - CONVERSATION_TIMEOUT_MINUTES=${CONVERSATION_TIMEOUT_MINUTES:-60}
     networks:
-      - root_default
+      - dani_network
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -29,5 +29,5 @@ services:
     #   - .env
 
 networks:
-  root_default:
+  dani_network:
     external: true
