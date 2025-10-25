@@ -201,5 +201,6 @@ export interface AppConfig {
   mcpServers: MCPServerConfig[];
   systemMessage: string;
   conversationTimeoutMinutes: number;
+  maxConversationMessages?: number;  // Maximum messages to keep in history (reduces token usage)
   cacheTTL?: '5m' | '1h';
 }

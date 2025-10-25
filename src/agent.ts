@@ -109,6 +109,9 @@ export class DANIAgent {
         content: userMessage,
       });
 
+      // Trim conversation history to control token usage
+      this.trimConversationHistory(conversation);
+
       // Execute the agentic loop
       const result = await this.agenticLoop(conversation, finalComplexity);
 
@@ -200,6 +203,9 @@ export class DANIAgent {
         content: toolResults,
       });
 
+      // Trim conversation history to control token usage
+      this.trimConversationHistory(conversation);
+
       // Continue the loop with the tool results
       return this.agenticLoop(conversation, complexity, iteration + 1, cumulativeUsage);
     } else {
@@ -289,6 +295,32 @@ export class DANIAgent {
     });
 
     return Promise.all(toolExecutions);
+  }
+
+  /**
+   * Trim conversation history to keep only the most recent messages
+   * This reduces token usage while maintaining conversation context
+   */
+  private trimConversationHistory(conversation: Conversation): void {
+    const maxMessages = this.config.maxConversationMessages;
+
+    // If no limit is set or conversation is within limit, do nothing
+    if (!maxMessages || conversation.messages.length <= maxMessages) {
+      return;
+    }
+
+    // Calculate how many messages to remove
+    const messagesToRemove = conversation.messages.length - maxMessages;
+
+    // Remove oldest messages (keeping newest ones)
+    const removedMessages = conversation.messages.splice(0, messagesToRemove);
+
+    this.logger.info('Trimmed conversation history', {
+      conversationId: conversation.id,
+      removedCount: removedMessages.length,
+      remainingCount: conversation.messages.length,
+      maxMessages,
+    });
   }
 
   /**

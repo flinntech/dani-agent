@@ -91,6 +91,9 @@ export function createConfig(): AppConfig {
     mcpServers: parseMCPServers(),
     systemMessage: loadSystemMessage(),
     conversationTimeoutMinutes: parseInt(process.env.CONVERSATION_TIMEOUT_MINUTES || '60', 10),
+    maxConversationMessages: process.env.MAX_CONVERSATION_MESSAGES
+      ? parseInt(process.env.MAX_CONVERSATION_MESSAGES, 10)
+      : 20,
     cacheTTL,
   };
 }
