@@ -15,7 +15,7 @@ import {
 } from './types';
 import { ToolResult, CorrectedResponse } from './types/validation.types';
 import { AnthropicClient } from './anthropic-client';
-import { MCPClientManager } from './mcp-client';
+import { MCPClientManager, UserContext } from './mcp-client';
 import { QueryAnalyzer } from './query-analyzer';
 import { ResponseParser } from './response-parser';
 import { MathValidator } from './math-validator';
@@ -32,6 +32,7 @@ export class DANIAgent {
   private config: AppConfig;
   private queryAnalyzer?: QueryAnalyzer;
   private conversations: Map<string, Conversation> = new Map();
+  private conversationUserContexts: Map<string, UserContext> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(
@@ -58,11 +59,17 @@ export class DANIAgent {
   async processMessage(
     userMessage: string,
     conversationId?: string,
-    complexity?: ComplexityLevel
+    complexity?: ComplexityLevel,
+    userContext?: UserContext
   ): Promise<AgentResponse> {
     // Get or create conversation
     const convId = conversationId || uuidv4();
     const conversation = this.getOrCreateConversation(convId);
+
+    // Store user context for this conversation
+    if (userContext) {
+      this.conversationUserContexts.set(convId, userContext);
+    }
 
     // Determine complexity level
     let finalComplexity: ComplexityLevel;
@@ -199,8 +206,9 @@ export class DANIAgent {
         content: response.content,
       });
 
-      // Execute all requested tools
-      const toolResults = await this.executeTools(toolUses);
+      // Execute all requested tools with user context
+      const userContext = this.conversationUserContexts.get(conversation.id);
+      const toolResults = await this.executeTools(toolUses, userContext);
 
       // Cache tool results for validation
       const cachedResults: ToolResult[] = toolResults.map((result, index) => ({
@@ -277,7 +285,8 @@ export class DANIAgent {
    * Execute multiple tool calls in parallel
    */
   private async executeTools(
-    toolUses: Anthropic.ToolUseBlock[]
+    toolUses: Anthropic.ToolUseBlock[],
+    userContext?: UserContext
   ): Promise<Anthropic.ToolResultBlockParam[]> {
     const toolExecutions = toolUses.map(async (toolUse) => {
       const startTime = Date.now();
@@ -285,7 +294,8 @@ export class DANIAgent {
       try {
         const result = await this.mcpManager.executeTool(
           toolUse.name,
-          toolUse.input as Record<string, unknown>
+          toolUse.input as Record<string, unknown>,
+          userContext
         );
 
         const duration = Date.now() - startTime;

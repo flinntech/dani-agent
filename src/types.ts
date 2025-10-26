@@ -10,12 +10,22 @@ import Anthropic from '@anthropic-ai/sdk';
 export type ComplexityLevel = 'SIMPLE' | 'PROCEDURAL' | 'ANALYTICAL';
 
 /**
+ * DRM API credentials for user-specific access
+ */
+export interface DrmApiKeys {
+  apiKeyId: string;
+  apiKeySecret: string;
+}
+
+/**
  * HTTP API Request body for /chat endpoint
  */
 export interface ChatRequest {
   message: string;
   conversationId?: string;
   complexity?: ComplexityLevel;
+  userId?: string;
+  drmApiKeys?: DrmApiKeys;
 }
 
 /**

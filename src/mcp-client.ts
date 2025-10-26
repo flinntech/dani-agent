@@ -11,7 +11,16 @@ import {
   MCPServerStatus,
   AnthropicTool,
   Logger,
+  DrmApiKeys,
 } from './types';
+
+/**
+ * User context for passing credentials to MCP servers
+ */
+export interface UserContext {
+  userId?: string;
+  drmApiKeys?: DrmApiKeys;
+}
 
 /**
  * MCP Client Manager
@@ -153,10 +162,14 @@ export class MCPClientManager {
 
   /**
    * Execute a tool call on the appropriate MCP server
+   * @param toolName - Name of the tool to execute
+   * @param args - Tool arguments
+   * @param userContext - Optional user context for passing credentials to MCP servers
    */
   async executeTool(
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    userContext?: UserContext
   ): Promise<{ content: string; isError: boolean }> {
     const serverName = this.toolToServerMap.get(toolName);
 
@@ -181,11 +194,25 @@ export class MCPClientManager {
       this.logger.info(`Executing tool: ${toolName}`, {
         server: serverName,
         arguments: args,
+        userId: userContext?.userId,
+        hasDrmKeys: !!userContext?.drmApiKeys,
       });
+
+      // For DRM server, include user credentials in tool arguments
+      // The drm-mcp server will extract these and use them for authentication
+      const toolArgs: Record<string, unknown> = { ...args };
+
+      if (serverName === 'drm' && userContext?.drmApiKeys) {
+        // Add credentials as special arguments that drm-mcp will recognize
+        toolArgs._dani_user_id = userContext.userId || 'unknown';
+        toolArgs._dani_drm_api_key_id = userContext.drmApiKeys.apiKeyId;
+        toolArgs._dani_drm_api_key_secret = userContext.drmApiKeys.apiKeySecret;
+        this.logger.info(`Including DRM credentials in tool args for user ${userContext.userId}`);
+      }
 
       const result = await client.callTool({
         name: toolName,
-        arguments: args,
+        arguments: toolArgs,
       });
 
       // Extract content from result

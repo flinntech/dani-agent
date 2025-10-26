@@ -92,7 +92,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
   try {
     // Validate request body
-    const { message, conversationId, complexity } = req.body;
+    const { message, conversationId, complexity, userId, drmApiKeys } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({
@@ -121,8 +121,16 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
       });
     }
 
+    // Build user context
+    const userContext = userId || drmApiKeys ? { userId, drmApiKeys } : undefined;
+
     // Process the message (auto-detect complexity if not provided)
-    const result = await agent.processMessage(message.trim(), conversationId, selectedComplexity);
+    const result = await agent.processMessage(
+      message.trim(),
+      conversationId,
+      selectedComplexity,
+      userContext
+    );
 
     // Return response
     return res.json({
