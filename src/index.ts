@@ -140,6 +140,8 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
       model: result.model,
       usage: result.usage,
       iterations: result.iterations,
+      toolCallDetails: result.toolCallDetails,
+      reasoningSteps: result.reasoningSteps,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

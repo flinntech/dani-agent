@@ -176,7 +176,7 @@ export class MCPClientManager {
     toolName: string,
     args: Record<string, unknown>,
     userContext?: UserContext
-  ): Promise<{ content: string; isError: boolean }> {
+  ): Promise<{ content: string; isError: boolean; server?: string }> {
     const serverName = this.toolToServerMap.get(toolName);
 
     if (!serverName) {
@@ -242,6 +242,7 @@ export class MCPClientManager {
       return {
         content,
         isError: result.isError === true,
+        server: serverName,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

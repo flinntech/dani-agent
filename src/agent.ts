@@ -155,7 +155,9 @@ export class DANIAgent {
     complexity: ComplexityLevel,
     iteration: number = 1,
     cumulativeUsage: UsageStats[] = [],
-    toolResultsCache: ToolResult[] = []
+    toolResultsCache: ToolResult[] = [],
+    toolCallDetailsAccumulator: import('./types').ToolCallDetail[] = [],
+    reasoningStepsAccumulator: import('./types').ReasoningStep[] = []
   ): Promise<AgentResponse> {
     const maxIterations = 10; // Prevent infinite loops
 
@@ -192,12 +194,23 @@ export class DANIAgent {
       // Extract tool uses
       const toolUses = this.aiClient.extractToolUses(response);
 
+      // Extract thinking content if available
+      const thinkingContent = this.aiClient.extractThinkingContent(response);
+
       this.logger.info('Claude requested tool use', {
         conversationId: conversation.id,
         iteration,
         toolCount: toolUses.length,
         tools: toolUses.map(t => t.name),
         iterationUsage: currentUsage,
+      });
+
+      // Record reasoning step
+      reasoningStepsAccumulator.push({
+        iteration,
+        timestamp: new Date().toISOString(),
+        toolsRequested: toolUses.map(t => t.name),
+        thinking: thinkingContent,
       });
 
       // Add assistant's response to conversation
@@ -208,7 +221,7 @@ export class DANIAgent {
 
       // Execute all requested tools with user context
       const userContext = this.conversationUserContexts.get(conversation.id);
-      const toolResults = await this.executeTools(toolUses, userContext);
+      const { toolResults, toolDetails } = await this.executeTools(toolUses, userContext, iteration);
 
       // Cache tool results for validation
       const cachedResults: ToolResult[] = toolResults.map((result, index) => ({
@@ -221,6 +234,9 @@ export class DANIAgent {
       }));
       toolResultsCache.push(...cachedResults);
 
+      // Accumulate tool call details
+      toolCallDetailsAccumulator.push(...toolDetails);
+
       // Add tool results to conversation as user message
       conversation.messages.push({
         role: 'user',
@@ -231,7 +247,15 @@ export class DANIAgent {
       this.trimConversationHistory(conversation);
 
       // Continue the loop with the tool results
-      return this.agenticLoop(conversation, complexity, iteration + 1, cumulativeUsage, toolResultsCache);
+      return this.agenticLoop(
+        conversation,
+        complexity,
+        iteration + 1,
+        cumulativeUsage,
+        toolResultsCache,
+        toolCallDetailsAccumulator,
+        reasoningStepsAccumulator
+      );
     } else {
       // Final response received
       const textContent = this.aiClient.extractTextContent(response);
@@ -277,6 +301,8 @@ export class DANIAgent {
         usageBreakdown: cumulativeUsage,
         iterations: iteration,
         mathCorrections: correctedResponse.correctionsMade ? correctedResponse.corrections : undefined,
+        toolCallDetails: toolCallDetailsAccumulator.length > 0 ? toolCallDetailsAccumulator : undefined,
+        reasoningSteps: reasoningStepsAccumulator.length > 0 ? reasoningStepsAccumulator : undefined,
       };
     }
   }
@@ -286,10 +312,15 @@ export class DANIAgent {
    */
   private async executeTools(
     toolUses: Anthropic.ToolUseBlock[],
-    userContext?: UserContext
-  ): Promise<Anthropic.ToolResultBlockParam[]> {
+    userContext?: UserContext,
+    iteration: number = 1
+  ): Promise<{
+    toolResults: Anthropic.ToolResultBlockParam[];
+    toolDetails: import('./types').ToolCallDetail[];
+  }> {
     const toolExecutions = toolUses.map(async (toolUse) => {
       const startTime = Date.now();
+      const timestamp = new Date().toISOString();
 
       try {
         const result = await this.mcpManager.executeTool(
@@ -306,12 +337,25 @@ export class DANIAgent {
           isError: result.isError,
         });
 
-        return {
+        const toolResult: Anthropic.ToolResultBlockParam = {
           type: 'tool_result' as const,
           tool_use_id: toolUse.id,
           content: result.content,
           is_error: result.isError,
         };
+
+        const toolDetail: import('./types').ToolCallDetail = {
+          toolName: toolUse.name,
+          server: result.server,
+          input: toolUse.input as Record<string, unknown>,
+          output: result.content,
+          timestamp,
+          duration,
+          isError: result.isError || false,
+          iteration,
+        };
+
+        return { toolResult, toolDetail };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const duration = Date.now() - startTime;
@@ -322,16 +366,33 @@ export class DANIAgent {
           error: errorMessage,
         });
 
-        return {
+        const toolResult: Anthropic.ToolResultBlockParam = {
           type: 'tool_result' as const,
           tool_use_id: toolUse.id,
           content: `Error: ${errorMessage}`,
           is_error: true,
         };
+
+        const toolDetail: import('./types').ToolCallDetail = {
+          toolName: toolUse.name,
+          input: toolUse.input as Record<string, unknown>,
+          output: `Error: ${errorMessage}`,
+          timestamp,
+          duration,
+          isError: true,
+          iteration,
+        };
+
+        return { toolResult, toolDetail };
       }
     });
 
-    return Promise.all(toolExecutions);
+    const results = await Promise.all(toolExecutions);
+
+    return {
+      toolResults: results.map(r => r.toolResult),
+      toolDetails: results.map(r => r.toolDetail),
+    };
   }
 
   /**
