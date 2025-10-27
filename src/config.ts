@@ -38,11 +38,27 @@ function loadSystemMessage(): string {
  * Validate required environment variables
  */
 function validateConfig(): void {
-  const required = ['ANTHROPIC_API_KEY'];
-  const missing = required.filter(key => !process.env[key]);
+  // Check for AI provider configuration
+  const useAnthropic = process.env.USE_ANTHROPIC === 'true' || !process.env.USE_BEDROCK;
+  const useBedrock = process.env.USE_BEDROCK === 'true';
 
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  if (useAnthropic && !useBedrock) {
+    // Anthropic direct API
+    const required = ['ANTHROPIC_API_KEY'];
+    const missing = required.filter(key => !process.env[key]);
+    if (missing.length > 0) {
+      throw new Error(`Missing required environment variables for Anthropic: ${missing.join(', ')}`);
+    }
+  } else if (useBedrock) {
+    // AWS Bedrock
+    const required = ['AWS_REGION'];
+    const missing = required.filter(key => !process.env[key]);
+    if (missing.length > 0) {
+      throw new Error(`Missing required environment variables for Bedrock: ${missing.join(', ')}`);
+    }
+    // AWS credentials can come from environment or IAM role, so we don't strictly require them
+  } else {
+    throw new Error('Invalid AI provider configuration. Set USE_ANTHROPIC=true or USE_BEDROCK=true');
   }
 }
 
@@ -83,11 +99,20 @@ export function createConfig(): AppConfig {
     throw new Error('CACHE_TTL must be either "5m" or "1h"');
   }
 
+  const useBedrock = process.env.USE_BEDROCK === 'true';
+
   return {
     port: parseInt(process.env.PORT || '8080', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
     logLevel: process.env.LOG_LEVEL || 'info',
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+    // Anthropic configuration
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    // AWS Bedrock configuration
+    useBedrock,
+    awsRegion: process.env.AWS_REGION,
+    awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    // Common configuration
     mcpServers: parseMCPServers(),
     systemMessage: loadSystemMessage(),
     conversationTimeoutMinutes: parseInt(process.env.CONVERSATION_TIMEOUT_MINUTES || '60', 10),
@@ -173,25 +198,27 @@ export function createLogger(config: AppConfig): Logger {
 
 /**
  * Model configuration for different complexity levels
+ * Using Amazon Nova models for AWS Bedrock
+ * Note: Nova models have a max token limit of 10240 (not 20000 like Claude)
  */
 export const MODEL_CONFIG = {
   SIMPLE: {
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 20000,
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 8000,
     thinking: {
       type: 'disabled' as const,
     },
   },
   PROCEDURAL: {
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 20000,
+    model: 'claude-sonnet-4-5-20250514',
+    max_tokens: 16000,
     thinking: {
       type: 'disabled' as const,
     },
   },
   ANALYTICAL: {
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 20000,
+    model: 'claude-sonnet-4-5-20250514',
+    max_tokens: 16000,
     thinking: {
       type: 'enabled' as const,
       budget_tokens: 10000,

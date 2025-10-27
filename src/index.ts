@@ -6,6 +6,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { config, logger } from './config';
 import { AnthropicClient } from './anthropic-client';
+import { BedrockClient } from './bedrock-client';
 import { MCPClientManager } from './mcp-client';
 import { DANIAgent } from './agent';
 import { QueryAnalyzer } from './query-analyzer';
@@ -195,23 +196,49 @@ async function initialize(): Promise<void> {
 
   try {
     // Initialize MCP client manager
-    mcpManager = new MCPClientManager(logger);
+    mcpManager = new MCPClientManager(logger, config.cacheTTL);
     await mcpManager.initialize(config.mcpServers);
 
-    // Initialize Anthropic client
-    const anthropicClient = new AnthropicClient(
-      config.anthropicApiKey,
-      config.systemMessage,
-      logger,
-      config.cacheTTL
-    );
+    // Initialize AI client (Bedrock or Anthropic)
+    let aiClient: AnthropicClient | BedrockClient;
 
-    // Initialize Query Analyzer for auto-detection
-    queryAnalyzer = new QueryAnalyzer(config.anthropicApiKey, logger);
-    logger.info('QueryAnalyzer initialized for automatic complexity detection');
+    if (config.useBedrock) {
+      logger.info('Initializing AWS Bedrock client', {
+        region: config.awsRegion,
+      });
+      aiClient = new BedrockClient(
+        config.awsRegion!,
+        config.systemMessage,
+        logger,
+        config.awsAccessKeyId,
+        config.awsSecretAccessKey
+      );
+
+      // Initialize Query Analyzer for Bedrock
+      queryAnalyzer = new QueryAnalyzer(
+        config.awsRegion!,
+        logger,
+        true,
+        config.awsAccessKeyId,
+        config.awsSecretAccessKey
+      );
+      logger.info('QueryAnalyzer initialized for automatic complexity detection (Bedrock)');
+    } else {
+      logger.info('Initializing Anthropic client');
+      aiClient = new AnthropicClient(
+        config.anthropicApiKey!,
+        config.systemMessage,
+        logger,
+        config.cacheTTL
+      );
+
+      // Initialize Query Analyzer for Anthropic
+      queryAnalyzer = new QueryAnalyzer(config.anthropicApiKey!, logger, false);
+      logger.info('QueryAnalyzer initialized for automatic complexity detection (Anthropic)');
+    }
 
     // Initialize DANI agent
-    agent = new DANIAgent(anthropicClient, mcpManager, config, logger, queryAnalyzer);
+    agent = new DANIAgent(aiClient, mcpManager, config, logger, queryAnalyzer);
 
     logger.info('DANI Agent Service initialized successfully', {
       availableTools: mcpManager.getAnthropicTools().length,
@@ -270,7 +297,8 @@ async function start(): Promise<void> {
     await initialize();
 
     // Start the HTTP server
-    server = app.listen(config.port, () => {
+    // Bind to 0.0.0.0 to accept connections from other containers in ECS tasks
+    server = app.listen(config.port, '0.0.0.0', () => {
       logger.info(`DANI Agent Service listening on port ${config.port}`, {
         environment: config.nodeEnv,
         endpoints: [

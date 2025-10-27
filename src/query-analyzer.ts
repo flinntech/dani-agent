@@ -1,9 +1,14 @@
 /**
  * Query Complexity Analyzer
  * Uses Claude Haiku to automatically detect query complexity level
+ * Supports both Anthropic Direct API and AWS Bedrock
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from '@aws-sdk/client-bedrock-runtime';
 import { ComplexityLevel, Logger } from './types';
 
 /**
@@ -33,14 +38,38 @@ Respond with ONLY one word: SIMPLE, PROCEDURAL, or ANALYTICAL`;
  * Analyzes user queries to automatically determine complexity level
  */
 export class QueryAnalyzer {
-  private client: Anthropic;
+  private anthropicClient?: Anthropic;
+  private bedrockClient?: BedrockRuntimeClient;
   private logger: Logger;
-  private model: string = 'claude-haiku-4-5-20251001';
+  private useBedrock: boolean;
+  private model: string = 'claude-3-5-haiku-20241022';
+  private bedrockModelId: string = 'anthropic.claude-3-5-haiku-20241022-v1:0';
   private maxTokens: number = 100;
 
-  constructor(apiKey: string, logger: Logger) {
-    this.client = new Anthropic({ apiKey });
+  constructor(
+    apiKeyOrRegion: string,
+    logger: Logger,
+    useBedrock: boolean = false,
+    awsAccessKeyId?: string,
+    awsSecretAccessKey?: string
+  ) {
     this.logger = logger;
+    this.useBedrock = useBedrock;
+
+    if (useBedrock) {
+      // Initialize Bedrock client
+      const credentials = awsAccessKeyId && awsSecretAccessKey
+        ? { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
+        : undefined;
+
+      this.bedrockClient = new BedrockRuntimeClient({
+        region: apiKeyOrRegion,
+        credentials,
+      });
+    } else {
+      // Initialize Anthropic client
+      this.anthropicClient = new Anthropic({ apiKey: apiKeyOrRegion });
+    }
   }
 
   /**
@@ -54,34 +83,79 @@ export class QueryAnalyzer {
       this.logger.debug('Analyzing query complexity', {
         queryLength: query.length,
         model: this.model,
+        useBedrock: this.useBedrock,
       });
 
-      // Call Claude Haiku for analysis
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: this.maxTokens,
-        temperature: 0,
-        system: ANALYSIS_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: query,
-          },
-        ],
-      });
+      let responseText: string;
+      let inputTokens: number = 0;
+      let outputTokens: number = 0;
 
-      // Extract the response text
-      const textBlock = response.content.find(
-        (block): block is Anthropic.TextBlock => block.type === 'text'
-      );
+      if (this.useBedrock && this.bedrockClient) {
+        // Use Bedrock
+        const requestBody = {
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: this.maxTokens,
+          temperature: 0,
+          system: ANALYSIS_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: 'user',
+              content: query,
+            },
+          ],
+        };
 
-      if (!textBlock) {
-        this.logger.warn('No text response from query analyzer, defaulting to ANALYTICAL');
-        return 'ANALYTICAL';
+        const command = new InvokeModelCommand({
+          modelId: this.bedrockModelId,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify(requestBody),
+        });
+
+        const response = await this.bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+
+        const textBlock = responseBody.content.find((block: any) => block.type === 'text');
+        if (!textBlock) {
+          this.logger.warn('No text response from query analyzer (Bedrock), defaulting to ANALYTICAL');
+          return 'ANALYTICAL';
+        }
+
+        responseText = textBlock.text.trim().toUpperCase();
+        inputTokens = responseBody.usage.input_tokens;
+        outputTokens = responseBody.usage.output_tokens;
+      } else if (this.anthropicClient) {
+        // Use Anthropic direct
+        const response = await this.anthropicClient.messages.create({
+          model: this.model,
+          max_tokens: this.maxTokens,
+          temperature: 0,
+          system: ANALYSIS_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: 'user',
+              content: query,
+            },
+          ],
+        });
+
+        const textBlock = response.content.find(
+          (block): block is Anthropic.TextBlock => block.type === 'text'
+        );
+
+        if (!textBlock) {
+          this.logger.warn('No text response from query analyzer (Anthropic), defaulting to ANALYTICAL');
+          return 'ANALYTICAL';
+        }
+
+        responseText = textBlock.text.trim().toUpperCase();
+        inputTokens = response.usage.input_tokens;
+        outputTokens = response.usage.output_tokens;
+      } else {
+        throw new Error('No AI client initialized');
       }
 
       // Parse the complexity level from response
-      const responseText = textBlock.text.trim().toUpperCase();
       const complexity = this.parseComplexity(responseText);
 
       // Log the analysis results
@@ -89,9 +163,10 @@ export class QueryAnalyzer {
       this.logger.info('Query complexity detected', {
         complexity,
         duration: `${duration}ms`,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        inputTokens,
+        outputTokens,
         model: this.model,
+        useBedrock: this.useBedrock,
       });
 
       return complexity;
@@ -102,6 +177,7 @@ export class QueryAnalyzer {
       this.logger.error('Error analyzing query complexity, defaulting to ANALYTICAL', {
         error: errorMessage,
         duration: `${duration}ms`,
+        useBedrock: this.useBedrock,
       });
 
       // Default to ANALYTICAL on error (safest option)

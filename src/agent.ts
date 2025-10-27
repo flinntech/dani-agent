@@ -14,7 +14,7 @@ import {
   UsageStats,
 } from './types';
 import { ToolResult, CorrectedResponse } from './types/validation.types';
-import { AnthropicClient } from './anthropic-client';
+import { AIClient } from './ai-client.interface';
 import { MCPClientManager, UserContext } from './mcp-client';
 import { QueryAnalyzer } from './query-analyzer';
 import { ResponseParser } from './response-parser';
@@ -26,7 +26,7 @@ import { ResponseCorrector } from './response-corrector';
  * Main agent class that orchestrates Claude API calls, tool execution, and conversation management
  */
 export class DANIAgent {
-  private anthropicClient: AnthropicClient;
+  private aiClient: AIClient;
   private mcpManager: MCPClientManager;
   private logger: Logger;
   private config: AppConfig;
@@ -36,13 +36,13 @@ export class DANIAgent {
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(
-    anthropicClient: AnthropicClient,
+    aiClient: AIClient,
     mcpManager: MCPClientManager,
     config: AppConfig,
     logger: Logger,
     queryAnalyzer?: QueryAnalyzer
   ) {
-    this.anthropicClient = anthropicClient;
+    this.aiClient = aiClient;
     this.mcpManager = mcpManager;
     this.config = config;
     this.logger = logger;
@@ -177,20 +177,20 @@ export class DANIAgent {
     const tools = this.mcpManager.getAnthropicTools();
 
     // Call Claude API
-    const response = await this.anthropicClient.sendMessage(
+    const response = await this.aiClient.sendMessage(
       conversation.messages,
       tools,
       complexity
     );
 
     // Track usage for this iteration
-    const currentUsage = this.anthropicClient.extractUsageStats(response);
+    const currentUsage = this.aiClient.extractUsageStats(response);
     cumulativeUsage.push(currentUsage);
 
     // Check stop reason
-    if (this.anthropicClient.hasToolUse(response)) {
+    if (this.aiClient.hasToolUse(response)) {
       // Extract tool uses
-      const toolUses = this.anthropicClient.extractToolUses(response);
+      const toolUses = this.aiClient.extractToolUses(response);
 
       this.logger.info('Claude requested tool use', {
         conversationId: conversation.id,
@@ -234,8 +234,8 @@ export class DANIAgent {
       return this.agenticLoop(conversation, complexity, iteration + 1, cumulativeUsage, toolResultsCache);
     } else {
       // Final response received
-      const textContent = this.anthropicClient.extractTextContent(response);
-      const thinkingContent = this.anthropicClient.extractThinkingContent(response);
+      const textContent = this.aiClient.extractTextContent(response);
+      const thinkingContent = this.aiClient.extractThinkingContent(response);
 
       // Calculate total cumulative usage
       const totalUsage = this.sumUsageStats(cumulativeUsage);

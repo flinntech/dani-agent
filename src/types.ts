@@ -213,7 +213,14 @@ export interface AppConfig {
   port: number;
   nodeEnv: string;
   logLevel: string;
-  anthropicApiKey: string;
+  // Anthropic configuration
+  anthropicApiKey?: string;
+  // AWS Bedrock configuration
+  useBedrock?: boolean;
+  awsRegion?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  // Common configuration
   mcpServers: MCPServerConfig[];
   systemMessage: string;
   conversationTimeoutMinutes: number;

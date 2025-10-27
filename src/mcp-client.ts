@@ -31,9 +31,11 @@ export class MCPClientManager {
   private toolToServerMap: Map<string, string> = new Map();
   private serverStatuses: Map<string, MCPServerStatus> = new Map();
   private logger: Logger;
+  private cacheTTL?: '5m' | '1h';
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, cacheTTL?: '5m' | '1h') {
     this.logger = logger;
+    this.cacheTTL = cacheTTL;
   }
 
   /**
@@ -154,7 +156,11 @@ export class MCPClientManager {
 
     // Add cache control to the last tool for prompt caching
     if (tools.length > 0) {
-      tools[tools.length - 1].cache_control = { type: 'ephemeral' };
+      const cacheControl: any = { type: 'ephemeral' };
+      if (this.cacheTTL) {
+        cacheControl.ttl = this.cacheTTL;
+      }
+      tools[tools.length - 1].cache_control = cacheControl;
     }
 
     return tools;

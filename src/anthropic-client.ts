@@ -5,12 +5,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ComplexityLevel, ModelConfig, UsageStats, Logger, AnthropicTool } from './types';
 import { MODEL_CONFIG } from './config';
+import { AIClient } from './ai-client.interface';
 
 /**
  * Anthropic Client Wrapper
  * Handles Claude API calls with caching, retry logic, and model selection
  */
-export class AnthropicClient {
+export class AnthropicClient implements AIClient {
   private client: Anthropic;
   private logger: Logger;
   private systemMessage: string;
@@ -96,11 +97,6 @@ export class AnthropicClient {
           type: 'enabled',
           budget_tokens: modelConfig.thinking.budget_tokens,
         };
-      }
-
-      // Add beta header when using extended cache TTL
-      if (this.cacheTTL) {
-        params.betas = ['extended-cache-ttl-2025-04-11'];
       }
 
       // Make the API call
