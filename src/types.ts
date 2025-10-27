@@ -214,12 +214,6 @@ export interface AgentResponse {
   complexitySource?: 'auto' | 'manual';
   usageBreakdown?: UsageStats[];
   iterations?: number;
-  mathCorrections?: Array<{
-    type: string;
-    original: string;
-    corrected: string;
-    reason: string;
-  }>;
   toolCallDetails?: ToolCallDetail[];
   reasoningSteps?: ReasoningStep[];
 }

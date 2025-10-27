@@ -203,21 +203,21 @@ export function createLogger(config: AppConfig): Logger {
  */
 export const MODEL_CONFIG = {
   SIMPLE: {
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 8000,
     thinking: {
       type: 'disabled' as const,
     },
   },
   PROCEDURAL: {
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-5-20250929',
     max_tokens: 16000,
     thinking: {
       type: 'disabled' as const,
     },
   },
   ANALYTICAL: {
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-5-20250929',
     max_tokens: 16000,
     thinking: {
       type: 'enabled' as const,

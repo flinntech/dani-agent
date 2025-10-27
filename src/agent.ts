@@ -13,13 +13,9 @@ import {
   AppConfig,
   UsageStats,
 } from './types';
-import { ToolResult, CorrectedResponse } from './types/validation.types';
 import { AIClient } from './ai-client.interface';
 import { MCPClientManager, UserContext } from './mcp-client';
 import { QueryAnalyzer } from './query-analyzer';
-import { ResponseParser } from './response-parser';
-import { MathValidator } from './math-validator';
-import { ResponseCorrector } from './response-corrector';
 
 /**
  * DANI Agent
@@ -155,7 +151,6 @@ export class DANIAgent {
     complexity: ComplexityLevel,
     iteration: number = 1,
     cumulativeUsage: UsageStats[] = [],
-    toolResultsCache: ToolResult[] = [],
     toolCallDetailsAccumulator: import('./types').ToolCallDetail[] = [],
     reasoningStepsAccumulator: import('./types').ReasoningStep[] = []
   ): Promise<AgentResponse> {
@@ -223,17 +218,6 @@ export class DANIAgent {
       const userContext = this.conversationUserContexts.get(conversation.id);
       const { toolResults, toolDetails } = await this.executeTools(toolUses, userContext, iteration);
 
-      // Cache tool results for validation
-      const cachedResults: ToolResult[] = toolResults.map((result, index) => ({
-        tool_use_id: result.tool_use_id,
-        toolName: toolUses[index].name,
-        type: 'tool_result',
-        content: result.content as string,
-        is_error: result.is_error,
-        timestamp: new Date(),
-      }));
-      toolResultsCache.push(...cachedResults);
-
       // Accumulate tool call details
       toolCallDetailsAccumulator.push(...toolDetails);
 
@@ -252,7 +236,6 @@ export class DANIAgent {
         complexity,
         iteration + 1,
         cumulativeUsage,
-        toolResultsCache,
         toolCallDetailsAccumulator,
         reasoningStepsAccumulator
       );
@@ -264,14 +247,6 @@ export class DANIAgent {
       // Calculate total cumulative usage
       const totalUsage = this.sumUsageStats(cumulativeUsage);
 
-      // Validate and correct math errors (filter out error results first)
-      const successfulToolResults = toolResultsCache.filter(tr => !tr.is_error);
-      const correctedResponse = await this.validateAndCorrectResponse(
-        textContent,
-        successfulToolResults,
-        conversation.id
-      );
-
       this.logger.info('Final response received', {
         conversationId: conversation.id,
         iterations: iteration,
@@ -279,28 +254,25 @@ export class DANIAgent {
         hasThinking: !!thinkingContent,
         totalUsage,
         usageBreakdown: cumulativeUsage,
-        mathCorrectionsMade: correctedResponse.correctionsMade,
-        correctionSeverity: correctedResponse.severity,
       });
 
-      // Add final response to conversation (use corrected text)
+      // Add final response to conversation
       conversation.messages.push({
         role: 'assistant',
-        content: correctedResponse.text,
+        content: textContent,
       });
 
       // Get model from response
       const modelConfig = response.model;
 
       return {
-        response: correctedResponse.text,
+        response: textContent,
         conversationId: conversation.id,
         model: modelConfig,
         usage: totalUsage,
         thinking: thinkingContent,
         usageBreakdown: cumulativeUsage,
         iterations: iteration,
-        mathCorrections: correctedResponse.correctionsMade ? correctedResponse.corrections : undefined,
         toolCallDetails: toolCallDetailsAccumulator.length > 0 ? toolCallDetailsAccumulator : undefined,
         reasoningSteps: reasoningStepsAccumulator.length > 0 ? reasoningStepsAccumulator : undefined,
       };
@@ -393,89 +365,6 @@ export class DANIAgent {
       toolResults: results.map(r => r.toolResult),
       toolDetails: results.map(r => r.toolDetail),
     };
-  }
-
-  /**
-   * Validate and correct mathematical errors in response
-   */
-  private async validateAndCorrectResponse(
-    responseText: string,
-    toolResults: ToolResult[],
-    conversationId: string
-  ): Promise<CorrectedResponse> {
-    const parser = new ResponseParser(this.logger);
-    const validator = new MathValidator(this.logger);
-    const corrector = new ResponseCorrector(this.logger);
-
-    // Step 1: Parse response to extract claims and lists
-    const parsed = parser.parse(responseText);
-
-    // Step 2: Validate all numeric claims against tool results
-    const validations = validator.validateAll(parsed.claims, toolResults);
-
-    // Step 3: Check for count/list mismatches
-    const mismatches = parser.detectCountListMismatches(parsed);
-
-    if (mismatches.length > 0) {
-      this.logger.warn('Detected count/list mismatches', {
-        conversationId,
-        mismatchCount: mismatches.length,
-        mismatches: mismatches.map(m => ({
-          claimed: m.claimedCount,
-          actual: m.actualCount,
-          entity: m.list.type,
-        })),
-      });
-    }
-
-    // Step 4: Check if corrections are needed
-    const errors = validations.filter(v => !v.isValid);
-
-    if (errors.length === 0 && mismatches.length === 0) {
-      // No corrections needed
-      return {
-        text: responseText,
-        correctionsMade: false,
-        corrections: [],
-        severity: 'none',
-        validationResults: validations,
-        metadata: {
-          originalLength: responseText.length,
-          correctedLength: responseText.length,
-          claimsValidated: validations.length,
-          claimsCorrected: 0,
-          listsValidated: parsed.lists.length,
-          listsCorrected: 0,
-        },
-      };
-    }
-
-    // Step 5: Auto-correct errors
-    this.logger.info('Applying math corrections', {
-      conversationId,
-      errorCount: errors.length,
-      mismatchCount: mismatches.length,
-      claimTypes: errors.map(e => e.claim.type),
-    });
-
-    const corrected = corrector.correctResponse(parsed, validations, toolResults);
-
-    // Step 6: Log corrections for monitoring
-    if (corrected.correctionsMade) {
-      this.logger.warn('Math corrections applied', {
-        conversationId,
-        severity: corrected.severity,
-        correctionsCount: corrected.corrections.length,
-        corrections: corrected.corrections.map(c => ({
-          type: c.type,
-          original: c.original,
-          corrected: c.corrected,
-          reason: c.reason,
-        })),
-      });
-    }
-
-    return corrected;
   }
 
   /**

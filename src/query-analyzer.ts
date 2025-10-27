@@ -42,8 +42,8 @@ export class QueryAnalyzer {
   private bedrockClient?: BedrockRuntimeClient;
   private logger: Logger;
   private useBedrock: boolean;
-  private model: string = 'claude-3-5-haiku-20241022';
-  private bedrockModelId: string = 'anthropic.claude-3-5-haiku-20241022-v1:0';
+  private model: string = 'claude-haiku-4-5-20251001';
+  private bedrockModelId: string = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
   private maxTokens: number = 100;
 
   constructor(
