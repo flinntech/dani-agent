@@ -75,6 +75,8 @@ export interface HealthResponse {
   };
   uptime: number;
   timestamp: string;
+  message?: string;  // Optional message for unhealthy status
+  task_definition?: string;  // ECS task definition version (for debugging)
 }
 
 /**

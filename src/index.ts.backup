@@ -1,17 +1,10 @@
 /**
- * DANI Agent Service - Main Entry Point with Secrets Manager Support
- *
- * This is an updated version of index.ts that loads secrets from AWS Secrets Manager
- * at startup before initializing the application.
- *
- * MIGRATION INSTRUCTIONS:
- * 1. Backup current index.ts: cp src/index.ts src/index.ts.backup
- * 2. Replace index.ts with this file: cp src/index-with-secrets.ts src/index.ts
- * 3. Update imports in config.ts as shown in config-with-secrets.ts
+ * DANI Agent Service - Main Entry Point
+ * Express HTTP API server
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { createConfigAsync, createLogger, logEnvironmentInfo } from './config';
+import { config, logger } from './config';
 import { AnthropicClient } from './anthropic-client';
 import { BedrockClient } from './bedrock-client';
 import { MCPClientManager } from './mcp-client';
@@ -23,14 +16,7 @@ import {
   ErrorResponse,
   HealthResponse,
   ComplexityLevel,
-  AppConfig,
-  Logger,
 } from './types';
-import {
-  requestTracingMiddleware,
-  conversationContextMiddleware,
-  errorLoggingMiddleware,
-} from './shared/request-tracing-middleware';
 
 // Create Express app
 const app = express();
@@ -38,45 +24,40 @@ const app = express();
 // Middleware
 app.use(express.json());
 
+// Request logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    logger.info('HTTP Request', {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip,
+    });
+  });
+
+  next();
+});
+
 // Global state
 let agent: DANIAgent | null = null;
 let mcpManager: MCPClientManager | null = null;
 let queryAnalyzer: QueryAnalyzer | null = null;
-let config: AppConfig | null = null;
-let logger: Logger | null = null;
 const startTime = Date.now();
-
-// Request tracing middleware (lazy initialization)
-// Will be properly initialized after logger is created
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!logger) {
-    // Logger not yet initialized, skip tracing
-    return next();
-  }
-
-  // Use structured logging middleware (cast logger to any to avoid type issues)
-  return requestTracingMiddleware({ logger: logger as any })(req, res, next);
-});
-
-// Conversation context middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!logger) {
-    return next();
-  }
-  return conversationContextMiddleware()(req, res, next);
-});
 
 /**
  * Health check endpoint
  */
 app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
-  if (!mcpManager || !config) {
+  if (!mcpManager) {
     return res.status(503).json({
       status: 'unhealthy',
       mcp_servers: {},
       uptime: (Date.now() - startTime) / 1000,
       timestamp: new Date().toISOString(),
-      message: 'Service not initialized',
     });
   }
 
@@ -103,7 +84,6 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
     mcp_servers: mcpServers,
     uptime: (Date.now() - startTime) / 1000,
     timestamp: new Date().toISOString(),
-    task_definition: process.env.ECS_TASK_DEFINITION || 'unknown',
   });
 });
 
@@ -167,13 +147,10 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const conversationId = req.body.conversationId;
 
-    if (logger) {
-      logger.error('Error in /chat endpoint', {
-        error: errorMessage,
-        conversationId,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-    }
+    logger.error('Error in /chat endpoint', {
+      error: errorMessage,
+      conversationId,
+    });
 
     return res.status(500).json({
       error: 'Internal Server Error',
@@ -194,14 +171,15 @@ app.use((req: Request, res: Response) => {
 });
 
 /**
- * Error logging middleware (logs errors with full context)
- */
-app.use(errorLoggingMiddleware());
-
-/**
- * Error handler (sends error response to client)
+ * Error handler
  */
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+  });
+
   res.status(500).json({
     error: 'Internal Server Error',
     message: 'An unexpected error occurred',
@@ -212,35 +190,18 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
-  console.log('[Startup] Initializing DANI Agent Service...');
+  logger.info('Initializing DANI Agent Service', {
+    nodeEnv: config.nodeEnv,
+    port: config.port,
+    mcpServerCount: config.mcpServers.length,
+  });
 
   try {
-    // Step 1: Load configuration (this loads secrets from AWS Secrets Manager)
-    console.log('[Startup] Step 1: Loading configuration and secrets...');
-    config = await createConfigAsync();
-    logger = createLogger(config);
-
-    // Log environment information
-    logEnvironmentInfo(logger);
-
-    logger.info('Configuration loaded successfully', {
-      nodeEnv: config.nodeEnv,
-      port: config.port,
-      mcpServerCount: config.mcpServers.length,
-      useBedrock: config.useBedrock,
-    });
-
-    // Step 2: Initialize MCP client manager
-    console.log('[Startup] Step 2: Initializing MCP clients...');
+    // Initialize MCP client manager
     mcpManager = new MCPClientManager(logger, config.cacheTTL);
     await mcpManager.initialize(config.mcpServers);
 
-    logger.info('MCP clients initialized', {
-      servers: config.mcpServers.map(s => s.name),
-    });
-
-    // Step 3: Initialize AI client (Bedrock or Anthropic)
-    console.log('[Startup] Step 3: Initializing AI client...');
+    // Initialize AI client (Bedrock or Anthropic)
     let aiClient: AnthropicClient | BedrockClient;
 
     if (config.useBedrock) {
@@ -278,27 +239,18 @@ async function initialize(): Promise<void> {
       logger.info('QueryAnalyzer initialized for automatic complexity detection (Anthropic)');
     }
 
-    // Step 4: Initialize DANI agent
-    console.log('[Startup] Step 4: Initializing DANI agent...');
+    // Initialize DANI agent
     agent = new DANIAgent(aiClient, mcpManager, config, logger, queryAnalyzer);
 
     logger.info('DANI Agent Service initialized successfully', {
       availableTools: mcpManager.getAnthropicTools().length,
       autoComplexityDetection: true,
     });
-
-    console.log('[Startup] ✓ Initialization complete!');
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[Startup] ✗ Failed to initialize DANI Agent Service:', errorMessage);
-
-    if (logger) {
-      logger.error('Failed to initialize DANI Agent Service', {
-        error: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-    }
-
+    logger.error('Failed to initialize DANI Agent Service', {
+      error: errorMessage,
+    });
     throw error;
   }
 }
@@ -307,20 +259,13 @@ async function initialize(): Promise<void> {
  * Graceful shutdown handler
  */
 async function shutdown(signal: string): Promise<void> {
-  console.log(`[Shutdown] Received ${signal}, starting graceful shutdown...`);
-
-  if (logger) {
-    logger.info(`Received ${signal}, starting graceful shutdown`);
-  }
+  logger.info(`Received ${signal}, starting graceful shutdown`);
 
   try {
     // Stop accepting new connections
     if (server) {
       server.close(() => {
-        console.log('[Shutdown] HTTP server closed');
-        if (logger) {
-          logger.info('HTTP server closed');
-        }
+        logger.info('HTTP server closed');
       });
     }
 
@@ -334,20 +279,11 @@ async function shutdown(signal: string): Promise<void> {
       await mcpManager.close();
     }
 
-    console.log('[Shutdown] Graceful shutdown complete');
-    if (logger) {
-      logger.info('Graceful shutdown complete');
-    }
-
+    logger.info('Graceful shutdown complete');
     process.exit(0);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[Shutdown] Error during shutdown:', errorMessage);
-
-    if (logger) {
-      logger.error('Error during shutdown', { error: errorMessage });
-    }
-
+    logger.error('Error during shutdown', { error: errorMessage });
     process.exit(1);
   }
 }
@@ -359,29 +295,19 @@ let server: ReturnType<typeof app.listen> | null = null;
 
 async function start(): Promise<void> {
   try {
-    console.log('[Server] Starting DANI Agent Service...');
-
-    // Initialize the application (loads secrets, connects to MCP servers, etc.)
+    // Initialize the application
     await initialize();
 
     // Start the HTTP server
     // Bind to 0.0.0.0 to accept connections from other containers in ECS tasks
-    const port = config?.port || 8080;
-    server = app.listen(port, '0.0.0.0', () => {
-      console.log(`[Server] ✓ DANI Agent Service listening on port ${port}`);
-      console.log(`[Server]   Endpoints:`);
-      console.log(`[Server]     POST http://localhost:${port}/chat`);
-      console.log(`[Server]     GET  http://localhost:${port}/health`);
-
-      if (logger) {
-        logger.info(`DANI Agent Service listening on port ${port}`, {
-          environment: config?.nodeEnv,
-          endpoints: [
-            `POST http://localhost:${port}/chat`,
-            `GET http://localhost:${port}/health`,
-          ],
-        });
-      }
+    server = app.listen(config.port, '0.0.0.0', () => {
+      logger.info(`DANI Agent Service listening on port ${config.port}`, {
+        environment: config.nodeEnv,
+        endpoints: [
+          `POST http://localhost:${config.port}/chat`,
+          `GET http://localhost:${config.port}/health`,
+        ],
+      });
     });
 
     // Setup graceful shutdown handlers
@@ -389,12 +315,7 @@ async function start(): Promise<void> {
     process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[Server] ✗ Failed to start server:', errorMessage);
-
-    if (logger) {
-      logger.error('Failed to start server', { error: errorMessage });
-    }
-
+    logger.error('Failed to start server', { error: errorMessage });
     process.exit(1);
   }
 }
@@ -402,7 +323,7 @@ async function start(): Promise<void> {
 // Start the application
 if (require.main === module) {
   start().catch(error => {
-    console.error('[Fatal] Fatal error during startup:', error);
+    console.error('Fatal error during startup:', error);
     process.exit(1);
   });
 }

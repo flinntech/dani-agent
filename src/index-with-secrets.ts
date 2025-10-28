@@ -54,8 +54,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return next();
   }
 
-  // Use structured logging middleware (cast logger to any to avoid type issues)
-  return requestTracingMiddleware({ logger: logger as any })(req, res, next);
+  // Use structured logging middleware
+  return requestTracingMiddleware({ logger })(req, res, next);
 });
 
 // Conversation context middleware

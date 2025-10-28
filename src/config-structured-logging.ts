@@ -154,7 +154,7 @@ export function createLogger(config: AppConfig): StructuredLogger {
 /**
  * Log startup information about the environment
  */
-export function logEnvironmentInfo(logger: StructuredLogger | any): void {
+export function logEnvironmentInfo(logger: StructuredLogger): void {
   const ecsTaskId = getECSTaskId();
   const containerName = process.env.HOSTNAME;
   const taskDefinition = process.env.ECS_TASK_DEFINITION;
