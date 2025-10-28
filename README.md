@@ -1,29 +1,38 @@
 # DANI Agent Service
 
-Production-ready AI Agent service using Claude and the Model Context Protocol (MCP). This service provides a simple HTTP API for n8n workflows to interact with Claude AI, with support for tool execution via MCP servers.
+Production-ready AI Agent service using Claude and the Model Context Protocol (MCP). This service provides the core intelligence for the DANI platform, integrating Claude AI with Digi Remote Manager and service outage monitoring capabilities.
+
+> Part of the [DANI platform](../README.md) - Digi Remote Manager and Network Infrastructure Assistant
 
 ## Features
 
 - **Claude AI Integration**: Uses official Anthropic SDK with support for Claude Haiku and Sonnet models
 - **Model Context Protocol**: Connects to MCP servers for dynamic tool discovery and execution
-- **Prompt Caching**: Automatic caching of system messages and tools to reduce API costs
+- **Prompt Caching**: Automatic caching of system messages and tools to reduce API costs by up to 90%
 - **Multi-turn Conversations**: Stateful conversation management with automatic history trimming
 - **Agentic Tool Loop**: Automatically handles multi-step tool execution
 - **Model Selection**: Automatic model selection based on query complexity
 - **Extended Thinking**: Support for Claude's thinking mode for analytical queries
 - **Production Ready**: Docker containerization, health checks, graceful shutdown, structured logging
 - **Retry Logic**: Exponential backoff for API failures and rate limits
+- **AWS Secrets Manager**: Secure credential management for production deployments
+- **Request Tracing**: Correlation IDs across all service calls for debugging
 
 ## Architecture
 
 ```
 HTTP API (Express)
     ↓
-DANI Agent Core
+DANI Agent Core (agent.ts)
     ↓
 Claude API (with prompt caching)
+    ├─> Haiku 4.5 (SIMPLE queries)
+    ├─> Sonnet 4.5 (PROCEDURAL queries)
+    └─> Sonnet 4.5 + Extended Thinking (ANALYTICAL queries)
     ↓
-MCP Servers (DRM, Outage Monitor)
+MCP Client Manager (mcp-client.ts)
+    ├─> DRM MCP Server (62 tools for device management)
+    └─> Outage Monitor MCP Server (8 tools for service status)
 ```
 
 ## Quick Start
@@ -31,38 +40,46 @@ MCP Servers (DRM, Outage Monitor)
 ### Prerequisites
 
 - Node.js 20+
-- Anthropic API key
+- Anthropic API key ([get one here](https://console.anthropic.com/))
 - Access to MCP servers (DRM and Outage Monitor)
 
 ### Installation
 
-1. Clone the repository and navigate to the project:
+1. **Clone and navigate:**
 
 ```bash
 cd dani-agent
 ```
 
-2. Install dependencies:
+2. **Install dependencies:**
 
 ```bash
 npm install
 ```
 
-3. Create `.env` file from example:
+3. **Create environment file:**
 
 ```bash
 cp .env.example .env
 ```
 
-4. Edit `.env` and add your Anthropic API key:
+4. **Configure environment variables:**
+
+Edit `.env` and add your configuration:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-your-api-key-here
-DRM_MCP_URL=http://drm-mcp-server:3000/mcp
+DRM_MCP_URL=http://drm-mcp-server:3001/mcp
 OUTAGE_MCP_URL=http://outage-monitor-mcp:3002/mcp
+LOG_LEVEL=info
+NODE_ENV=production
 ```
 
-5. (Optional) Customize the system message in `system-message.md`
+5. **Build the TypeScript code:**
+
+```bash
+npm run build
+```
 
 ### Running Locally
 
@@ -72,7 +89,7 @@ OUTAGE_MCP_URL=http://outage-monitor-mcp:3002/mcp
 npm run dev
 ```
 
-**Build and run production:**
+**Production mode:**
 
 ```bash
 npm run build
@@ -101,10 +118,10 @@ Send a message to the DANI agent.
 
 - `message` (required): The user's message/query
 - `conversationId` (optional): ID for multi-turn conversations. If not provided, a new conversation is created
-- `complexity` (optional): Query complexity level. Defaults to `ANALYTICAL` if not specified
-  - `SIMPLE`: Uses Claude Haiku for quick, simple queries
-  - `PROCEDURAL`: Uses Claude Sonnet for multi-step tasks
-  - `ANALYTICAL`: Uses Claude Sonnet with extended thinking for complex analysis
+- `complexity` (optional): Query complexity level. If not specified, auto-detected from query
+  - `SIMPLE`: Uses Claude Haiku 4.5 for quick, simple queries (10x cheaper)
+  - `PROCEDURAL`: Uses Claude Sonnet 4.5 for multi-step tasks
+  - `ANALYTICAL`: Uses Claude Sonnet 4.5 with extended thinking (10k token budget) for complex analysis
 
 **Response:**
 
@@ -155,7 +172,7 @@ See [Cache Configuration](#cache-configuration) for details on enabling this fea
 
 ### GET /health
 
-Health check endpoint for monitoring.
+Health check endpoint for monitoring and load balancers.
 
 **Response:**
 
@@ -171,9 +188,14 @@ Health check endpoint for monitoring.
 }
 ```
 
+**Status Levels:**
+- `healthy`: All systems operational, MCP servers connected
+- `degraded`: Some MCP servers unavailable but agent functional
+- `unhealthy`: Critical failures, service should not receive traffic
+
 ## Usage Examples
 
-### Simple Query
+### Simple Query (Fast & Cheap)
 
 ```bash
 curl -X POST http://localhost:8080/chat \
@@ -188,23 +210,24 @@ curl -X POST http://localhost:8080/chat \
 
 ```bash
 # First message
-curl -X POST http://localhost:8080/chat \
+RESPONSE=$(curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": "What is the status of device XYZ-123?",
     "complexity": "PROCEDURAL"
-  }'
+  }')
 
-# Response includes conversationId: "abc-123-def-456"
+# Extract conversationId from response
+CONV_ID=$(echo $RESPONSE | jq -r '.conversationId')
 
 # Follow-up message in same conversation
 curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
-  -d '{
-    "message": "What about device XYZ-124?",
-    "conversationId": "abc-123-def-456",
-    "complexity": "PROCEDURAL"
-  }'
+  -d "{
+    \"message\": \"What about device XYZ-124?\",
+    \"conversationId\": \"$CONV_ID\",
+    \"complexity\": \"PROCEDURAL\"
+  }"
 ```
 
 ### Analytical Query with Extended Thinking
@@ -213,7 +236,7 @@ curl -X POST http://localhost:8080/chat \
 curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Analyze connectivity issues in the northeast region over the past 7 days and identify patterns",
+    "message": "Analyze connectivity issues in the northeast region over the past 7 days, identify patterns, root causes, and provide recommendations",
     "complexity": "ANALYTICAL"
   }'
 ```
@@ -223,20 +246,6 @@ curl -X POST http://localhost:8080/chat \
 ```bash
 curl http://localhost:8080/health
 ```
-
-### Using from n8n
-
-In n8n, add an **HTTP Request** node with:
-
-- **Method**: POST
-- **URL**: `http://dani-agent:8080/chat`
-- **Authentication**: None
-- **Body Content Type**: JSON
-- **Specify Body**: Using Fields
-- **Fields**:
-  - `message`: `{{ $json.userQuery }}`
-  - `complexity`: `ANALYTICAL`
-  - `conversationId`: `{{ $json.conversationId }}` (optional)
 
 ## Docker Deployment
 
@@ -251,55 +260,32 @@ docker build -t dani-agent:latest .
 ```bash
 docker run -d \
   --name dani-agent \
-  --network root_default \
+  --network dani_network \
   -p 8080:8080 \
   -e ANTHROPIC_API_KEY=sk-ant-your-key \
-  -e DRM_MCP_URL=http://drm-mcp-server:3000/mcp \
+  -e DRM_MCP_URL=http://drm-mcp-server:3001/mcp \
   -e OUTAGE_MCP_URL=http://outage-monitor-mcp:3002/mcp \
   dani-agent:latest
 ```
 
 ### Run with Docker Compose
 
-The service is configured to connect to the `root_default` network where the MCP servers are running.
-
-1. Create `.env` file with your configuration
-2. Ensure the `root_default` network exists (or modify `docker-compose.yml` for your network)
-3. Start the service:
+From the root of the DANI project:
 
 ```bash
-docker-compose up -d
+docker-compose up -d dani-agent
 ```
 
-4. View logs:
+View logs:
 
 ```bash
 docker-compose logs -f dani-agent
 ```
 
-5. Stop the service:
+Stop the service:
 
 ```bash
 docker-compose down
-```
-
-### Connecting to Different Network
-
-If your MCP servers are on a different Docker network, modify `docker-compose.yml`:
-
-```yaml
-networks:
-  your-network-name:
-    external: true
-```
-
-And update the service to use that network:
-
-```yaml
-services:
-  dani-agent:
-    networks:
-      - your-network-name
 ```
 
 ## Configuration
@@ -308,8 +294,8 @@ services:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | - | Anthropic API key |
-| `DRM_MCP_URL` | No | `http://drm-mcp-server:3000/mcp` | DRM MCP server URL |
+| `ANTHROPIC_API_KEY` | Yes | - | Anthropic API key (or AWS Secrets Manager ARN) |
+| `DRM_MCP_URL` | No | `http://drm-mcp-server:3001/mcp` | DRM MCP server URL |
 | `OUTAGE_MCP_URL` | No | `http://outage-monitor-mcp:3002/mcp` | Outage Monitor MCP server URL |
 | `PORT` | No | `8080` | HTTP server port |
 | `NODE_ENV` | No | `production` | Node environment |
@@ -318,13 +304,36 @@ services:
 | `SYSTEM_MESSAGE` | No | (from file) | System message for DANI personality |
 | `MAX_CONVERSATION_HISTORY` | No | `20` | Max messages to keep in history |
 | `CONVERSATION_TIMEOUT_MINUTES` | No | `60` | Minutes before conversation cleanup |
+| `AWS_REGION` | No | `us-east-1` | AWS region for Secrets Manager |
+
+### AWS Secrets Manager Integration
+
+For production deployments, the agent automatically loads secrets from AWS Secrets Manager:
+
+**Supported secret formats:**
+
+1. **Direct secret ARN** in environment variable:
+   ```env
+   ANTHROPIC_API_KEY=arn:aws:secretsmanager:us-east-1:123456789:secret:anthropic-api-key
+   ```
+
+2. **JSON secret** with multiple values:
+   ```json
+   {
+     "ANTHROPIC_API_KEY": "sk-ant-...",
+     "DRM_API_KEY_ID": "...",
+     "DRM_API_KEY_SECRET": "..."
+   }
+   ```
+
+The agent will automatically detect ARNs and fetch secrets on startup. See [../guides/PHASE-1-SECRETS-MANAGER-GUIDE.md](../guides/PHASE-1-SECRETS-MANAGER-GUIDE.md) for setup instructions.
 
 ### System Message
 
 The system message defines DANI's personality and capabilities. You can configure it in two ways:
 
 1. **Via environment variable**: Set `SYSTEM_MESSAGE` in your `.env` file
-2. **Via file**: Edit `system-message.md` in the project root
+2. **Via file**: Edit [system-message.md](system-message.md) in the project root
 
 If both are provided, the environment variable takes precedence.
 
@@ -332,11 +341,11 @@ If both are provided, the environment variable takes precedence.
 
 The service automatically selects models based on complexity:
 
-| Complexity | Model | Max Tokens | Extended Thinking |
-|------------|-------|------------|-------------------|
-| `SIMPLE` | Claude Haiku 4.5 | 20,000 | No |
-| `PROCEDURAL` | Claude Sonnet 4.5 | 20,000 | No |
-| `ANALYTICAL` | Claude Sonnet 4.5 | 20,000 | Yes (10k budget) |
+| Complexity | Model | Max Tokens | Extended Thinking | Best For |
+|------------|-------|------------|-------------------|----------|
+| `SIMPLE` | Claude Haiku 4.5 | 20,000 | No | Quick queries, simple lookups |
+| `PROCEDURAL` | Claude Sonnet 4.5 | 20,000 | No | Multi-step tasks, device management |
+| `ANALYTICAL` | Claude Sonnet 4.5 | 20,000 | Yes (10k budget) | Complex analysis, troubleshooting |
 
 ## Prompt Caching
 
@@ -396,7 +405,7 @@ By default, prompt caching uses 5-minute cache duration. Anthropic offers an ext
 - Long system messages or tool schemas that rarely change
 - High-volume production workloads with consistent prompts
 
-## Logging
+## Structured Logging
 
 The service uses structured JSON logging with Winston. All logs include:
 
@@ -404,6 +413,7 @@ The service uses structured JSON logging with Winston. All logs include:
 - Log level (info, warn, error, debug)
 - Message
 - Contextual metadata (conversationId, tool names, timing, etc.)
+- Request correlation ID for distributed tracing
 
 **Log Levels:**
 
@@ -413,6 +423,24 @@ The service uses structured JSON logging with Winston. All logs include:
 - `debug`: Detailed debugging information
 
 Set `LOG_LEVEL=debug` in `.env` for verbose logging.
+
+**CloudWatch Integration:**
+
+In production (AWS ECS), logs are automatically sent to CloudWatch Logs (`/ecs/dani-app`). Use pre-built CloudWatch Insights queries for analysis:
+
+```
+# Find slow requests
+fields @timestamp, message, duration_ms
+| filter service = "dani-agent" and duration_ms > 5000
+| sort duration_ms desc
+
+# Track cache performance
+fields @timestamp, cache_read_tokens, cache_creation_tokens
+| filter service = "dani-agent" and cache_read_tokens > 0
+| stats avg(cache_read_tokens), sum(cache_read_tokens)
+```
+
+See [../cloudwatch-insights-queries.md](../cloudwatch-insights-queries.md) for more queries.
 
 ## Troubleshooting
 
@@ -451,7 +479,7 @@ npm run dev  # Will show detailed logs
 
 ```bash
 # Test DRM MCP server
-curl http://drm-mcp-server:3000/mcp
+curl http://drm-mcp-server:3001/mcp
 
 # Test Outage Monitor MCP server
 curl http://outage-monitor-mcp:3002/mcp
@@ -464,9 +492,10 @@ curl http://outage-monitor-mcp:3002/mcp
 docker network ls
 
 # Inspect network
-docker network inspect your-network-name
+docker network inspect dani_network
 
 # Ensure all containers are on same network
+docker inspect dani-agent --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
 ```
 
 **The service will start even if MCP servers are unavailable**, but it will operate in degraded mode with no tools available.
@@ -484,7 +513,7 @@ docker network inspect your-network-name
 
 **Monitor usage:**
 - Check the `usage` field in API responses
-- Set up alerts for high token usage
+- Set up CloudWatch alarms for high token usage
 
 ### Slow responses
 
@@ -510,8 +539,16 @@ dani-agent/
 │   ├── agent.ts              # Core DANI agent logic and agentic loop
 │   ├── mcp-client.ts         # MCP server connection and tool management
 │   ├── anthropic-client.ts   # Claude API wrapper with caching
+│   ├── bedrock-client.ts     # AWS Bedrock alternative (not active)
+│   ├── query-analyzer.ts     # Query complexity detection
 │   ├── config.ts             # Configuration and logging setup
-│   └── types.ts              # TypeScript type definitions
+│   ├── types.ts              # TypeScript type definitions
+│   ├── ai-client.interface.ts # AIClient interface
+│   └── shared/               # Shared utilities (logging, tracing, secrets)
+│       ├── structured-logger.ts
+│       ├── request-tracing-middleware.ts
+│       ├── traced-http-client.ts
+│       └── secrets-loader.ts
 ├── system-message.md         # DANI personality and instructions
 ├── Dockerfile                # Multi-stage production Dockerfile
 ├── docker-compose.yml        # Docker Compose configuration
@@ -543,7 +580,7 @@ To add a new MCP server:
    NEW_MCP_URL=http://new-server:3000/mcp
    ```
 
-2. Update `config.ts` to parse the new server:
+2. Update [config.ts](src/config.ts) to parse the new server:
    ```typescript
    if (process.env.NEW_MCP_URL) {
      servers.push({
@@ -557,20 +594,35 @@ The service will automatically discover and use tools from the new server.
 
 ### Modifying System Message
 
-Edit `system-message.md` and restart the service. The new personality will be applied to all new conversations.
+Edit [system-message.md](system-message.md) and restart the service. The new personality will be applied to all new conversations.
 
 ## Production Deployment
 
+### AWS ECS Deployment
+
+The DANI agent is deployed to AWS ECS Fargate as part of the main application. See [../DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md) for complete instructions.
+
+**Quick deployment:**
+
+```bash
+# From project root
+./deploy.sh agent
+
+# Or deploy all services
+./deploy.sh
+```
+
 ### Security Checklist
 
-- [ ] Use HTTPS in production (reverse proxy with SSL/TLS)
-- [ ] Secure API key storage (secrets manager, not plain .env)
-- [ ] Enable rate limiting (use nginx or API gateway)
-- [ ] Set up monitoring and alerts
-- [ ] Configure log aggregation (CloudWatch, DataDog, etc.)
-- [ ] Restrict network access to MCP servers
-- [ ] Use read-only file system where possible
-- [ ] Keep dependencies updated
+- [x] HTTPS in production (via ALB)
+- [x] Secure API key storage (AWS Secrets Manager)
+- [x] Enable rate limiting (via ALB)
+- [x] Set up monitoring and alerts (CloudWatch)
+- [x] Configure log aggregation (CloudWatch Logs)
+- [x] Restrict network access to MCP servers (Security Groups)
+- [x] Use read-only file system where possible
+- [x] Keep dependencies updated
+- [x] Non-root user in container
 
 ### Monitoring
 
@@ -588,6 +640,14 @@ Edit `system-message.md` and restart the service. The new personality will be ap
 
 Configure your load balancer or orchestrator to use `GET /health` for health checks.
 
+**CloudWatch Alarms:**
+
+- Health check failures
+- High error rates (> 5%)
+- High latency (p99 > 10s)
+- Memory usage > 80%
+- High token usage
+
 ### Scaling
 
 The service is stateless except for in-memory conversation history. To scale:
@@ -595,25 +655,41 @@ The service is stateless except for in-memory conversation history. To scale:
 1. **Horizontal scaling**: Run multiple instances behind a load balancer
 2. **Session affinity**: Use sticky sessions to route conversations to same instance
 3. **External state**: Consider Redis for conversation storage if needed
+4. **Auto-scaling**: Configure ECS auto-scaling based on CPU/memory metrics
 
-## License
+## Related Documentation
 
-MIT
+- [Main README](../README.md) - DANI platform overview
+- [AWS Infrastructure](../AWS-INFRASTRUCTURE.md) - AWS resource specifications
+- [Deployment Guide](../DEPLOYMENT-GUIDE.md) - Deployment workflows
+- [Environment Variables](../ENV-VARIABLES.md) - Complete variable reference
+- [Secrets Manager Guide](../guides/PHASE-1-SECRETS-MANAGER-GUIDE.md) - AWS Secrets setup
+- [Logging Guide](../guides/PHASE-2-LOGGING-GUIDE.md) - Structured logging implementation
+- [CloudWatch Queries](../cloudwatch-insights-queries.md) - Pre-built log queries
 
 ## Support
 
 For issues and questions:
-- Check the troubleshooting section above
+- Check the [troubleshooting section](#troubleshooting) above
 - Review logs for detailed error messages
 - Verify MCP server connectivity
 - Test with simple queries first
+- See [../README.md](../README.md) for support contacts
 
 ## Version History
 
-**v1.0.0** - Initial release
-- Claude AI integration with Haiku and Sonnet models
+**v1.0.0** - Production release
+- Claude AI integration with Haiku 4.5 and Sonnet 4.5
 - MCP server support (DRM and Outage Monitor)
-- Prompt caching
-- Multi-turn conversations
+- Prompt caching (5m and 1h TTL)
+- Multi-turn conversations with auto-cleanup
+- Query complexity analysis
+- Extended thinking mode
 - Docker deployment
-- Production-ready logging and error handling
+- AWS Secrets Manager integration
+- Structured logging with CloudWatch
+- Production-ready error handling and retries
+
+## License
+
+Copyright (c) 2025 Flinn Technologies. All rights reserved.
