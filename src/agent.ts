@@ -56,11 +56,24 @@ export class DANIAgent {
     userMessage: string,
     conversationId?: string,
     complexity?: ComplexityLevel,
-    userContext?: UserContext
+    userContext?: UserContext,
+    providedMessages?: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<AgentResponse> {
     // Get or create conversation
     const convId = conversationId || uuidv4();
     const conversation = this.getOrCreateConversation(convId);
+
+    // If provided messages exist, replace the in-memory conversation history
+    if (providedMessages && providedMessages.length > 0) {
+      conversation.messages = providedMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+      this.logger.info('Using provided conversation history from database', {
+        conversationId: convId,
+        messageCount: providedMessages.length,
+      });
+    }
 
     // Store user context for this conversation
     if (userContext) {

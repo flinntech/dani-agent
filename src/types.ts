@@ -26,6 +26,7 @@ export interface ChatRequest {
   complexity?: ComplexityLevel;
   userId?: string;
   drmApiKeys?: DrmApiKeys;
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 /**

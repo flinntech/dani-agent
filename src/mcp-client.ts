@@ -132,6 +132,62 @@ export class MCPClientManager {
   }
 
   /**
+   * Refresh the tool list for a specific MCP server after dynamic tool loading
+   * This should be called after tools are dynamically enabled (e.g., via load_tool_category)
+   * @param serverName - Name of the MCP server to refresh (e.g., 'drm')
+   */
+  async refreshServerTools(serverName: string): Promise<void> {
+    const client = this.clients.get(serverName);
+    const status = this.serverStatuses.get(serverName);
+
+    if (!client || !status) {
+      this.logger.warn(`Cannot refresh tools: server ${serverName} not found`);
+      return;
+    }
+
+    if (!status.connected) {
+      this.logger.warn(`Cannot refresh tools: server ${serverName} not connected`);
+      return;
+    }
+
+    try {
+      this.logger.info(`Refreshing tool list for MCP server: ${serverName}`);
+
+      // Fetch fresh tool list from server
+      const toolsResult = await client.listTools();
+      const tools: MCPTool[] = toolsResult.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }));
+
+      // Clear old tool-to-server mappings for this server
+      status.tools.forEach(tool => {
+        this.toolToServerMap.delete(tool.name);
+      });
+
+      // Update status with fresh tools
+      status.tools = tools;
+
+      // Rebuild tool-to-server mapping
+      tools.forEach(tool => {
+        this.toolToServerMap.set(tool.name, serverName);
+      });
+
+      this.logger.info(`Successfully refreshed tools for MCP server: ${serverName}`, {
+        toolCount: tools.length,
+        tools: tools.map(t => t.name),
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to refresh tools for server: ${serverName}`, {
+        error: errorMessage,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get all available tools from all connected MCP servers
    * in Anthropic tool format
    */
@@ -238,6 +294,20 @@ export class MCPClientManager {
         server: serverName,
         isError: result.isError === true,
       });
+
+      // AUTO-REFRESH: If this was a category loading tool, refresh the tool list
+      // so newly enabled tools become immediately available
+      if (toolName === 'load_tool_category' && result.isError !== true) {
+        this.logger.info(`Tool category loaded, refreshing tools for ${serverName}...`);
+        try {
+          await this.refreshServerTools(serverName);
+          this.logger.info(`Tool list refreshed after category load`);
+        } catch (error) {
+          // Log error but don't fail the tool call - the category was loaded successfully
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          this.logger.error(`Failed to refresh tools after category load: ${errorMessage}`);
+        }
+      }
 
       return {
         content,

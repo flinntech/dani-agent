@@ -113,7 +113,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
   try {
     // Validate request body
-    const { message, conversationId, complexity, userId, drmApiKeys } = req.body;
+    const { message, conversationId, complexity, userId, drmApiKeys, messages } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({
@@ -150,7 +150,8 @@ app.post('/chat', async (req: Request<{}, {}, ChatRequest>, res: Response<ChatRe
       message.trim(),
       conversationId,
       selectedComplexity,
-      userContext
+      userContext,
+      messages
     );
 
     // Return response
